@@ -17,6 +17,26 @@ isolated SQLite feature tests with `php artisan test`.
 API routes are under `/api`, including `/api/auth/google`,
 `/api/auth/apple`, and `/api/travel-orders`.
 
+## Dynamic exports
+
+Authenticated clients discover export options with `GET /api/exports` and
+download a file with
+`GET /api/travel-orders/{travelOrder}/exports/{exportName}?currency=EUR`.
+
+Export route names come from `export_formats.name`. The mobile app renders the
+API response dynamically, so adding or changing an active export does not
+require a frontend change.
+
+To add an export:
+
+1. Add or update its record in `Database\Seeders\ExportFormatSeeder`.
+2. Point `handler` to an existing generator, or add a backend generator in
+   `TravelOrderExportService`.
+3. Run `php artisan db:seed --class=ExportFormatSeeder`.
+
+The seeded formats are `pdf`, `pantheon`, `spica`, `option`, `skula`,
+`infonet`, and `dynamics`.
+
 ---
 
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>

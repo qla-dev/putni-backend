@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\RevenueCatController;
 use App\Http\Controllers\Api\TravelOrderController;
+use App\Http\Controllers\Api\TravelOrderExportController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => response()->json([
@@ -22,7 +23,9 @@ Route::prefix('auth')->group(function () {
     });
 });
 
-Route::middleware('auth:sanctum')->apiResource(
-    'travel-orders',
-    TravelOrderController::class
-)->only(['index', 'store', 'update', 'destroy']);
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('exports', [TravelOrderExportController::class, 'index']);
+    Route::get('travel-orders/{travelOrder}/exports/{exportFormat:name}', [TravelOrderExportController::class, 'show']);
+    Route::apiResource('travel-orders', TravelOrderController::class)
+        ->only(['index', 'store', 'update', 'destroy']);
+});
