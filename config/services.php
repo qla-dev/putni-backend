@@ -17,6 +17,7 @@ return [
         'secret_api_key' => env('REVENUECAT_SECRET_API_KEY'),
         'ios_api_key' => env('REVENUECAT_APPLE_API_KEY'),
         'android_api_key' => env('REVENUECAT_GOOGLE_API_KEY'),
+        'offering_identifier' => env('REVENUECAT_OFFERING_IDENTIFIER', 'putni-nalozi'),
         'offering_rest_id' => env('REVENUECAT_OFFERING_REST_ID', 'ofrng6542b044e6'),
         'credit_products' => array_filter([
             env('REVENUECAT_STARTER_PRODUCT_ID') => 10,
