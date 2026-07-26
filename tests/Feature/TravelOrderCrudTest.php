@@ -18,7 +18,10 @@ class TravelOrderCrudTest extends TestCase
         $created = $this->withToken($token)
             ->postJson('/api/travel-orders', $this->payload())
             ->assertCreated()
-            ->assertJsonPath('data.id', 'order-client-1');
+            ->assertJsonPath('data.order.id', 'order-client-1')
+            ->assertJsonPath('data.remainingAiOrders', 79);
+
+        $this->assertSame(79, $user->refresh()->ai_order_credits);
 
         $this->withToken($token)
             ->getJson('/api/travel-orders')
@@ -36,6 +39,20 @@ class TravelOrderCrudTest extends TestCase
             ->assertNoContent();
 
         $this->assertDatabaseCount('travel_orders', 0);
+    }
+
+    public function test_user_without_credits_cannot_create_an_order(): void
+    {
+        $user = User::factory()->create(['ai_order_credits' => 0]);
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->withToken($token)
+            ->postJson('/api/travel-orders', $this->payload())
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'No AI order credits remain.');
+
+        $this->assertDatabaseCount('travel_orders', 0);
+        $this->assertSame(0, $user->refresh()->ai_order_credits);
     }
 
     public function test_user_cannot_change_another_users_order(): void

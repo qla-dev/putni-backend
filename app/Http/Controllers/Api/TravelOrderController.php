@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TravelOrderResource;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class TravelOrderController extends Controller
@@ -18,11 +20,23 @@ class TravelOrderController extends Controller
 
     public function store(Request $request)
     {
-        $order = $request->user()->travelOrders()->create($this->validated($request));
+        $data = $this->validated($request);
+        [$order, $remainingCredits] = DB::transaction(function () use ($request, $data) {
+            /** @var User $user */
+            $user = User::query()->lockForUpdate()->findOrFail($request->user()->id);
+            abort_if($user->ai_order_credits < 1, 422, 'No AI order credits remain.');
+            $order = $user->travelOrders()->create($data);
+            $user->decrement('ai_order_credits');
 
-        return (new TravelOrderResource($order))
-            ->response()
-            ->setStatusCode(201);
+            return [$order, (int) $user->refresh()->ai_order_credits];
+        });
+
+        return response()->json([
+            'data' => [
+                'order' => (new TravelOrderResource($order))->resolve($request),
+                'remainingAiOrders' => $remainingCredits,
+            ],
+        ], 201);
     }
 
     public function update(Request $request, string $travelOrder)
