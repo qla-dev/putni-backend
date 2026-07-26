@@ -97,6 +97,7 @@ class TravelOrderController extends Controller
             'expenses.*.date' => ['required', 'date'],
             'expenses.*.amountInEur' => ['required', 'numeric', 'min:0'],
             'expenses.*.paymentMethod' => ['required', 'string', 'max:100'],
+            'expenses.*.imageUri' => ['sometimes', 'nullable', 'string', 'max:2048'],
             'expenses.*.originalAmount' => ['sometimes', 'numeric', 'min:0'],
             'expenses.*.scannedByAi' => ['sometimes', 'boolean'],
             'expenses.*.subtotal' => ['sometimes', 'numeric', 'min:0'],
