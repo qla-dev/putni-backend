@@ -24,11 +24,12 @@ class TravelOrderController extends Controller
         [$order, $remainingCredits] = DB::transaction(function () use ($request, $data) {
             /** @var User $user */
             $user = User::query()->lockForUpdate()->findOrFail($request->user()->id);
-            abort_if($user->ai_order_credits < 1, 422, 'No AI order credits remain.');
+            $creditAccount = User::query()->lockForUpdate()->findOrFail($user->creditAccount()->id);
+            abort_if($creditAccount->ai_order_credits < 1, 422, 'No AI order credits remain.');
             $order = $user->travelOrders()->create($data);
-            $user->decrement('ai_order_credits');
+            $creditAccount->decrement('ai_order_credits');
 
-            return [$order, (int) $user->refresh()->ai_order_credits];
+            return [$order, (int) $creditAccount->refresh()->ai_order_credits];
         });
 
         return response()->json([

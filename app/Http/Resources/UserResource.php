@@ -9,11 +9,13 @@ class UserResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $creditAccount = $this->creditAccount();
+
         return [
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
-            'remainingAiOrders' => $this->ai_order_credits,
+            'remainingAiOrders' => $creditAccount->ai_order_credits,
         ];
     }
 }

@@ -17,8 +17,9 @@ class RevenueCatController extends Controller
         $user = DB::transaction(function () use ($request) {
             /** @var User $user */
             $user = User::query()->lockForUpdate()->findOrFail($request->user()->id);
-            abort_if($user->ai_order_credits < 1, 422, 'No AI order credits remain.');
-            $user->decrement('ai_order_credits');
+            $creditAccount = User::query()->lockForUpdate()->findOrFail($user->creditAccount()->id);
+            abort_if($creditAccount->ai_order_credits < 1, 422, 'No AI order credits remain.');
+            $creditAccount->decrement('ai_order_credits');
 
             return $user->refresh();
         });
@@ -56,6 +57,7 @@ class RevenueCatController extends Controller
         $granted = DB::transaction(function () use ($request, $transactions, $validated, $credits) {
             /** @var User $user */
             $user = User::query()->lockForUpdate()->findOrFail($request->user()->id);
+            $creditAccount = User::query()->lockForUpdate()->findOrFail($user->creditAccount()->id);
             $granted = 0;
 
             foreach ($transactions as $transaction) {
@@ -78,7 +80,7 @@ class RevenueCatController extends Controller
             }
 
             if ($granted > 0) {
-                $user->increment('ai_order_credits', $granted);
+                $creditAccount->increment('ai_order_credits', $granted);
             }
 
             return $granted;

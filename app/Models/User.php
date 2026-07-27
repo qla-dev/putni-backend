@@ -56,4 +56,26 @@ class User extends Authenticatable
     {
         return $this->hasMany(TravelOrder::class);
     }
+
+    public function companies()
+    {
+        return $this->belongsToMany(Company::class)
+            ->withPivot('role')
+            ->withTimestamps();
+    }
+
+    public function ownedCompany()
+    {
+        return $this->hasOne(Company::class, 'owner_id');
+    }
+
+    public function creditAccount(): self
+    {
+        $company = $this->companies()
+            ->where('share_ai_tokens', true)
+            ->with('owner')
+            ->first();
+
+        return $company?->owner ?? $this;
+    }
 }

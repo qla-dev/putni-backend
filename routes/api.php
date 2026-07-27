@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\RevenueCatController;
 use App\Http\Controllers\Api\TravelOrderController;
 use App\Http\Controllers\Api\TravelOrderExportController;
@@ -24,6 +25,10 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('company', [CompanyController::class, 'show']);
+    Route::post('company', [CompanyController::class, 'store']);
+    Route::patch('company', [CompanyController::class, 'update']);
+    Route::post('company/join', [CompanyController::class, 'join']);
     Route::get('exports', [TravelOrderExportController::class, 'index']);
     Route::get('travel-orders/{travelOrder}/exports/{exportFormat:name}', [TravelOrderExportController::class, 'show']);
     Route::apiResource('travel-orders', TravelOrderController::class)
