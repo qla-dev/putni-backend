@@ -97,4 +97,27 @@ class CompanyTest extends TestCase
             ->assertJsonPath('data.remainingAiOrders', 42)
             ->assertJsonCount(0, 'data.orders');
     }
+
+    public function test_only_owner_can_remove_a_member_from_the_company(): void
+    {
+        $owner = User::factory()->create();
+        Sanctum::actingAs($owner);
+        $company = $this->postJson('/api/company', ['name' => 'QLA Team'])->json('data');
+
+        $member = User::factory()->create();
+        Sanctum::actingAs($member);
+        $this->postJson('/api/company/join', ['code' => $company['inviteCode']])->assertOk();
+        $this->deleteJson("/api/company/members/{$member->id}")->assertForbidden();
+
+        Sanctum::actingAs($owner);
+        $this->deleteJson("/api/company/members/{$owner->id}")->assertUnprocessable();
+        $this->deleteJson("/api/company/members/{$member->id}")
+            ->assertOk()
+            ->assertJsonCount(0, 'data.members');
+
+        $this->assertDatabaseMissing('company_user', [
+            'company_id' => $company['id'],
+            'user_id' => $member->id,
+        ]);
+    }
 }

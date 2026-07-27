@@ -109,6 +109,22 @@ class CompanyController extends Controller
         ]]);
     }
 
+    public function removeMember(Request $request, User $member)
+    {
+        $company = $request->user()->ownedCompany;
+        abort_unless($company, 403, 'Only a company owner can remove members.');
+        abort_if($company->owner_id === $member->id, 422, 'The company owner cannot be removed.');
+        abort_unless(
+            $company->members()->where('users.id', $member->id)->exists(),
+            404,
+            'Company member was not found.',
+        );
+
+        $company->members()->detach($member->id);
+
+        return response()->json(['data' => $this->payload($company->fresh(), $request->user())]);
+    }
+
     private function payload(Company $company, User $viewer): array
     {
         $company->loadMissing(['owner', 'members']);
