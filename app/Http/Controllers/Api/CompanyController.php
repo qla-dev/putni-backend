@@ -101,7 +101,10 @@ class CompanyController extends Controller
             'member' => $this->memberPayload($member),
             'remainingAiOrders' => (int) $member->ai_order_credits,
             'orders' => TravelOrderResource::collection(
-                $member->travelOrders()->latest()->get(),
+                $member->travelOrders()
+                    ->where('company_name', $company->name)
+                    ->latest()
+                    ->get(),
             )->resolve($request),
         ]]);
     }
@@ -110,9 +113,12 @@ class CompanyController extends Controller
     {
         $company->loadMissing(['owner', 'members']);
         $teamOrdersProcessed = $company->members()
-            ->withCount('travelOrders')
+            ->withCount([
+                'travelOrders as team_orders_count' => fn ($query) => $query
+                    ->where('company_name', $company->name),
+            ])
             ->get()
-            ->sum('travel_orders_count');
+            ->sum('team_orders_count');
 
         return [
             'id' => $company->id,
