@@ -13,6 +13,11 @@ return [
             explode(',', (string) env('APPLE_CLIENT_IDS', ''))
         ))),
     ],
+    'openrouter' => [
+        'api_key' => env('OPENROUTER_API_KEY'),
+        'model' => env('OPENROUTER_MODEL', 'google/gemini-2.5-flash'),
+        'url' => env('OPENROUTER_URL', 'https://openrouter.ai/api/v1/chat/completions'),
+    ],
     'revenuecat' => [
         'secret_api_key' => env('REVENUECAT_SECRET_API_KEY'),
         'ios_api_key' => env('REVENUECAT_APPLE_API_KEY'),

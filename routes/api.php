@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\RevenueCatController;
+use App\Http\Controllers\Api\ReceiptScanController;
 use App\Http\Controllers\Api\TravelOrderController;
 use App\Http\Controllers\Api\TravelOrderExportController;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,8 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('receipt-scans', [ReceiptScanController::class, 'store'])
+        ->middleware('throttle:10,1');
     Route::get('company', [CompanyController::class, 'show']);
     Route::post('company', [CompanyController::class, 'store']);
     Route::patch('company', [CompanyController::class, 'update']);
