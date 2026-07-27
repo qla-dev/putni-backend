@@ -46,6 +46,18 @@ class AuthController extends Controller
         return response()->json(['user' => new UserResource($request->user())]);
     }
 
+    public function update(Request $request)
+    {
+        $validated = $request->validate([
+            'jobTitle' => ['sometimes', 'string', 'max:255'],
+        ]);
+        if (isset($validated['jobTitle'])) {
+            $request->user()->update(['job_title' => trim($validated['jobTitle'])]);
+        }
+
+        return response()->json(['user' => new UserResource($request->user()->refresh())]);
+    }
+
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()?->delete();

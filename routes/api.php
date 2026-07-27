@@ -18,6 +18,7 @@ Route::prefix('auth')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
+        Route::patch('me', [AuthController::class, 'update']);
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('revenuecat/sync-credits', [RevenueCatController::class, 'syncCredits']);
         Route::post('credits/consume', [RevenueCatController::class, 'consumeCredit']);

@@ -84,12 +84,16 @@ class CompanyTest extends TestCase
         $member = User::factory()->create(['name' => 'Member User', 'ai_order_credits' => 42]);
         Sanctum::actingAs($member);
         $this->postJson('/api/company/join', ['code' => $company['inviteCode']])->assertOk();
+        $this->patchJson('/api/auth/me', ['jobTitle' => 'Voditelj prodaje'])
+            ->assertOk()
+            ->assertJsonPath('user.jobTitle', 'Voditelj prodaje');
         $this->getJson("/api/company/members/{$member->id}")->assertForbidden();
 
         Sanctum::actingAs($owner);
         $this->getJson("/api/company/members/{$member->id}")
             ->assertOk()
             ->assertJsonPath('data.member.name', 'Member User')
+            ->assertJsonPath('data.member.jobTitle', 'Voditelj prodaje')
             ->assertJsonPath('data.remainingAiOrders', 42)
             ->assertJsonCount(0, 'data.orders');
     }

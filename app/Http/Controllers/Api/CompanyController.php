@@ -146,6 +146,7 @@ class CompanyController extends Controller
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
+            'jobTitle' => $user->job_title,
         ];
     }
 
