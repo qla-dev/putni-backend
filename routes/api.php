@@ -29,6 +29,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('company', [CompanyController::class, 'store']);
     Route::patch('company', [CompanyController::class, 'update']);
     Route::post('company/join', [CompanyController::class, 'join']);
+    Route::get('company/members/{member}', [CompanyController::class, 'member']);
     Route::get('exports', [TravelOrderExportController::class, 'index']);
     Route::get('travel-orders/{travelOrder}/exports/{exportFormat:name}', [TravelOrderExportController::class, 'show']);
     Route::apiResource('travel-orders', TravelOrderController::class)

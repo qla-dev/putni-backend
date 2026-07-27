@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\TravelOrderResource;
 use App\Models\Company;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -47,6 +48,7 @@ class CompanyController extends Controller
     public function update(Request $request)
     {
         $validated = $request->validate([
+            'name' => ['sometimes', 'string', 'max:255'],
             'teamEnabled' => ['sometimes', 'boolean'],
             'shareAiTokens' => ['sometimes', 'boolean'],
         ]);
@@ -54,9 +56,10 @@ class CompanyController extends Controller
         abort_unless($company, 403, 'Only a company owner can change team settings.');
 
         $company->update(array_filter([
+            'name' => isset($validated['name']) ? trim($validated['name']) : null,
             'team_enabled' => $validated['teamEnabled'] ?? null,
             'share_ai_tokens' => $validated['shareAiTokens'] ?? null,
-        ], fn ($value) => $value !== null));
+        ], fn ($value) => $value !== null && $value !== ''));
 
         if (! $company->team_enabled && $company->share_ai_tokens) {
             $company->update(['share_ai_tokens' => false]);
@@ -84,9 +87,32 @@ class CompanyController extends Controller
         return response()->json(['data' => $this->payload($company, $user)]);
     }
 
+    public function member(Request $request, User $member)
+    {
+        $company = $request->user()->ownedCompany;
+        abort_unless($company, 403, 'Only a company owner can view member data.');
+        abort_unless(
+            $company->members()->where('users.id', $member->id)->exists(),
+            404,
+            'Company member was not found.',
+        );
+
+        return response()->json(['data' => [
+            'member' => $this->memberPayload($member),
+            'remainingAiOrders' => (int) $member->ai_order_credits,
+            'orders' => TravelOrderResource::collection(
+                $member->travelOrders()->latest()->get(),
+            )->resolve($request),
+        ]]);
+    }
+
     private function payload(Company $company, User $viewer): array
     {
         $company->loadMissing(['owner', 'members']);
+        $teamOrdersProcessed = $company->members()
+            ->withCount('travelOrders')
+            ->get()
+            ->sum('travel_orders_count');
 
         return [
             'id' => $company->id,
@@ -94,17 +120,21 @@ class CompanyController extends Controller
             'inviteCode' => $company->invite_code,
             'teamEnabled' => $company->team_enabled,
             'shareAiTokens' => $company->share_ai_tokens,
+            'teamOrdersProcessed' => $teamOrdersProcessed,
+            'teamRemainingAiOrders' => $company->share_ai_tokens
+                ? (int) $company->owner->ai_order_credits
+                : 0,
             'isOwner' => $company->owner_id === $viewer->id,
-            'owner' => $this->member($company->owner),
+            'owner' => $this->memberPayload($company->owner),
             'members' => $company->members
                 ->where('id', '!=', $company->owner_id)
                 ->values()
-                ->map(fn (User $user) => $this->member($user))
+                ->map(fn (User $user) => $this->memberPayload($user))
                 ->all(),
         ];
     }
 
-    private function member(User $user): array
+    private function memberPayload(User $user): array
     {
         return [
             'id' => $user->id,

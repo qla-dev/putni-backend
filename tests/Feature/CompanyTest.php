@@ -42,9 +42,13 @@ class CompanyTest extends TestCase
         $company = $this->postJson('/api/company', ['name' => 'QLA Team'])->json('data');
 
         $this->patchJson('/api/company', [
+            'name' => 'QLA Renamed',
             'teamEnabled' => true,
             'shareAiTokens' => true,
-        ])->assertOk()->assertJsonPath('data.shareAiTokens', true);
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.name', 'QLA Renamed')
+            ->assertJsonPath('data.shareAiTokens', true);
 
         $member = User::factory()->create();
         Sanctum::actingAs($member);
@@ -69,5 +73,24 @@ class CompanyTest extends TestCase
 
         $this->assertSame(4, $owner->refresh()->ai_order_credits);
         $this->assertSame(80, $member->refresh()->ai_order_credits);
+    }
+
+    public function test_owner_can_view_member_details_but_member_cannot(): void
+    {
+        $owner = User::factory()->create();
+        Sanctum::actingAs($owner);
+        $company = $this->postJson('/api/company', ['name' => 'QLA Team'])->json('data');
+
+        $member = User::factory()->create(['name' => 'Member User', 'ai_order_credits' => 42]);
+        Sanctum::actingAs($member);
+        $this->postJson('/api/company/join', ['code' => $company['inviteCode']])->assertOk();
+        $this->getJson("/api/company/members/{$member->id}")->assertForbidden();
+
+        Sanctum::actingAs($owner);
+        $this->getJson("/api/company/members/{$member->id}")
+            ->assertOk()
+            ->assertJsonPath('data.member.name', 'Member User')
+            ->assertJsonPath('data.remainingAiOrders', 42)
+            ->assertJsonCount(0, 'data.orders');
     }
 }
