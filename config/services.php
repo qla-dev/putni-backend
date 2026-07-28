@@ -2,10 +2,12 @@
 
 return [
     'google' => [
-        'client_ids' => array_values(array_filter(array_map(
-            'trim',
-            explode(',', (string) env('GOOGLE_CLIENT_IDS', ''))
-        ))),
+        'client_ids' => array_values(array_unique(array_filter([
+            ...array_map('trim', explode(',', (string) env('GOOGLE_CLIENT_IDS', ''))),
+            trim((string) env('GOOGLE_WEB_CLIENT_ID', '')),
+            trim((string) env('GOOGLE_IOS_CLIENT_ID', '')),
+            trim((string) env('GOOGLE_ANDROID_CLIENT_ID', '')),
+        ]))),
     ],
     'apple' => [
         'client_ids' => array_values(array_filter(array_map(
