@@ -18,7 +18,7 @@ Route::prefix('auth')->group(function () {
     Route::post('google', [AuthController::class, 'google']);
     Route::post('apple', [AuthController::class, 'apple']);
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'putni.user'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::patch('me', [AuthController::class, 'update']);
         Route::post('logout', [AuthController::class, 'logout']);
@@ -31,13 +31,13 @@ Route::prefix('lampyris/auth')->group(function () {
     Route::post('google', [LampyrisAuthController::class, 'google']);
     Route::post('apple', [LampyrisAuthController::class, 'apple']);
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'lampyris.user'])->group(function () {
         Route::get('me', [LampyrisAuthController::class, 'me']);
         Route::post('logout', [LampyrisAuthController::class, 'logout']);
     });
 });
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'putni.user'])->group(function () {
     Route::post('receipt-scans', [ReceiptScanController::class, 'store'])
         ->middleware('throttle:10,1');
     Route::get('company', [CompanyController::class, 'show']);

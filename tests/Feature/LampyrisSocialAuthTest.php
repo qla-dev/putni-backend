@@ -54,8 +54,19 @@ class LampyrisSocialAuthTest extends TestCase
             ->postJson('/api/lampyris/auth/logout')
             ->assertOk();
 
-        $this->withToken($token)
-            ->getJson('/api/lampyris/auth/me')
-            ->assertUnauthorized();
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
+    public function test_lampyris_tokens_cannot_access_putni_routes(): void
+    {
+        $user = LampyrisUser::query()->create([
+            'name' => 'Fire Fly',
+            'email' => 'firefly@example.com',
+            'google_id' => 'lampyris-google-123',
+        ]);
+
+        $this->withToken($user->createToken('lampyris-mobile')->plainTextToken)
+            ->getJson('/api/auth/me')
+            ->assertForbidden();
     }
 }

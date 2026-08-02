@@ -12,7 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        $middleware->alias([
+            'lampyris.user' => \App\Http\Middleware\EnsureLampyrisUser::class,
+            'putni.user' => \App\Http\Middleware\EnsurePutniUser::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
