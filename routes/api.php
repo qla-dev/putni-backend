@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyController;
+use App\Http\Controllers\Api\LampyrisAuthController;
 use App\Http\Controllers\Api\RevenueCatController;
 use App\Http\Controllers\Api\ReceiptScanController;
 use App\Http\Controllers\Api\TravelOrderController;
@@ -23,6 +24,16 @@ Route::prefix('auth')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('revenuecat/sync-credits', [RevenueCatController::class, 'syncCredits']);
         Route::post('credits/consume', [RevenueCatController::class, 'consumeCredit']);
+    });
+});
+
+Route::prefix('lampyris/auth')->group(function () {
+    Route::post('google', [LampyrisAuthController::class, 'google']);
+    Route::post('apple', [LampyrisAuthController::class, 'apple']);
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('me', [LampyrisAuthController::class, 'me']);
+        Route::post('logout', [LampyrisAuthController::class, 'logout']);
     });
 });
 

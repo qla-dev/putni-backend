@@ -15,6 +15,18 @@ return [
             explode(',', (string) env('APPLE_CLIENT_IDS', ''))
         ))),
     ],
+    'lampyris' => [
+        'google_client_ids' => array_values(array_unique(array_filter([
+            ...array_map('trim', explode(',', (string) env('LAMPYRIS_GOOGLE_CLIENT_IDS', ''))),
+            trim((string) env('LAMPYRIS_GOOGLE_WEB_CLIENT_ID', '')),
+            trim((string) env('LAMPYRIS_GOOGLE_IOS_CLIENT_ID', '')),
+            trim((string) env('LAMPYRIS_GOOGLE_ANDROID_CLIENT_ID', '')),
+        ]))),
+        'apple_client_ids' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('LAMPYRIS_APPLE_CLIENT_IDS', 'lampyris.qla.dev'))
+        ))),
+    ],
     'openrouter' => [
         'api_key' => env('OPENROUTER_API_KEY'),
         'model' => env('OPENROUTER_MODEL', 'google/gemini-2.5-flash'),
