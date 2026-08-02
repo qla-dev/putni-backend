@@ -14,5 +14,13 @@ class LampyrisUser extends Authenticatable
         'email',
         'google_id',
         'apple_id',
+        'free_access_expires_at',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'free_access_expires_at' => 'datetime',
+        ];
+    }
 }

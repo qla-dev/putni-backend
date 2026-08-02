@@ -32,6 +32,10 @@ class LampyrisSocialAuthTest extends TestCase
             ->assertJsonPath('is_new_user', true)
             ->assertJsonStructure(['token']);
 
+        $expiresAt = $response->json('user.freeAccessExpiresAt');
+        $this->assertGreaterThanOrEqual(now()->addHours(23)->getTimestamp() * 1000, $expiresAt);
+        $this->assertLessThanOrEqual(now()->addHours(24)->addMinute()->getTimestamp() * 1000, $expiresAt);
+
         $this->assertDatabaseHas('lampyris_users', ['email' => 'firefly@example.com']);
         $this->assertDatabaseCount('users', 0);
 
@@ -39,6 +43,11 @@ class LampyrisSocialAuthTest extends TestCase
             ->getJson('/api/lampyris/auth/me')
             ->assertOk()
             ->assertJsonPath('user.name', 'Fire Fly');
+
+        $secondLogin = $this->postJson('/api/lampyris/auth/google', ['id_token' => 'valid']);
+        $secondLogin->assertOk()
+            ->assertJsonPath('is_new_user', false)
+            ->assertJsonPath('user.freeAccessExpiresAt', $expiresAt);
     }
 
     public function test_lampyris_logout_revokes_the_current_token(): void

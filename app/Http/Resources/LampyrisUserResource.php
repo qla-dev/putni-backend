@@ -13,6 +13,9 @@ class LampyrisUserResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
+            'freeAccessExpiresAt' => $this->free_access_expires_at
+                ? $this->free_access_expires_at->getTimestamp() * 1000
+                : null,
         ];
     }
 }

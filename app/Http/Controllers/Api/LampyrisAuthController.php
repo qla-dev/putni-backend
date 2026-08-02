@@ -89,6 +89,7 @@ class LampyrisAuthController extends Controller
                 'name' => trim((string) $name) ?: Str::before($email, '@'),
                 'email' => $email,
                 $providerField => $providerId,
+                'free_access_expires_at' => now()->addHours(24),
             ]);
         }
 
