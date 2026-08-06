@@ -58,6 +58,11 @@ class User extends Authenticatable
         return $this->hasMany(TravelOrder::class);
     }
 
+    public function vehicles()
+    {
+        return $this->hasMany(UserVehicle::class);
+    }
+
     public function companies()
     {
         return $this->belongsToMany(Company::class)

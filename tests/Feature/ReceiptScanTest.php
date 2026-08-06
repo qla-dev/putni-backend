@@ -84,6 +84,8 @@ class ReceiptScanTest extends TestCase
             ]],
             'confidence' => 0.98,
             'warnings' => [],
+            'departureLocation' => '',
+            'destinationLocation' => '',
         ];
     }
 }

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\RevenueCatController;
 use App\Http\Controllers\Api\ReceiptScanController;
 use App\Http\Controllers\Api\TravelOrderController;
 use App\Http\Controllers\Api\TravelOrderExportController;
+use App\Http\Controllers\Api\UserVehicleController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('health', fn () => response()->json([
@@ -38,6 +39,8 @@ Route::prefix('lampyris/auth')->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'putni.user'])->group(function () {
+    Route::get('vehicles/catalog', [UserVehicleController::class, 'catalog']);
+    Route::apiResource('vehicles', UserVehicleController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::post('receipt-scans', [ReceiptScanController::class, 'store'])
         ->middleware('throttle:10,1');
     Route::get('company', [CompanyController::class, 'show']);

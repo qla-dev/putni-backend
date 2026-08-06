@@ -35,14 +35,14 @@ class OpenRouterReceiptScanner
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Precizno očitaj račun za putni nalog. Ne izmišljaj nečitljive vrijednosti. Valutu odredi isključivo iz oznake ili simbola na računu i vrati njen ISO 4217 kod. Ukupan iznos preračunaj u EUR u polje totalInEur; ako je račun u EUR, totalInEur mora biti jednak polju total. Vrati samo podatke koji odgovaraju zadanoj JSON shemi.',
+                        'content' => 'Precizno očitaj račun ili avionsku kartu za putni nalog. Ne izmišljaj nečitljive vrijednosti. Za avionsku kartu vrati mjesto polaska u departureLocation i krajnje odredište u destinationLocation; za ostale račune vrati prazne stringove. Valutu odredi isključivo iz oznake ili simbola na dokumentu i vrati njen ISO 4217 kod. Ukupan iznos preračunaj u EUR u polje totalInEur; ako je dokument u EUR, totalInEur mora biti jednak polju total. Vrati samo podatke koji odgovaraju zadanoj JSON shemi.',
                     ],
                     [
                         'role' => 'user',
                         'content' => [
                             [
                                 'type' => 'text',
-                                'text' => 'Očitaj trgovca, datum, broj računa, kategoriju, valutu kao ISO 4217 kod, osnovicu, PDV, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu.',
+                                'text' => 'Očitaj trgovca ili aviokompaniju, datum, broj računa ili karte, kategoriju, valutu kao ISO 4217 kod, osnovicu, PDV, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu. Ako je dokument avionska karta, očitaj i mjesto polaska te krajnje odredište.',
                             ],
                             ...array_map(fn (array $image) => [
                                 'type' => 'image_url',
@@ -111,6 +111,8 @@ class OpenRouterReceiptScanner
             'confidence' => ['required', 'numeric', 'between:0,1'],
             'warnings' => ['present', 'array'],
             'warnings.*' => ['string'],
+            'departureLocation' => ['present', 'string'],
+            'destinationLocation' => ['present', 'string'],
         ];
     }
 
@@ -119,7 +121,7 @@ class OpenRouterReceiptScanner
         return [
             'type' => 'object',
             'additionalProperties' => false,
-            'required' => ['vendor', 'date', 'receiptNumber', 'category', 'currency', 'subtotal', 'vat', 'total', 'totalInEur', 'paymentMethod', 'description', 'items', 'confidence', 'warnings'],
+            'required' => ['vendor', 'date', 'receiptNumber', 'category', 'currency', 'subtotal', 'vat', 'total', 'totalInEur', 'paymentMethod', 'description', 'items', 'confidence', 'warnings', 'departureLocation', 'destinationLocation'],
             'properties' => [
                 'vendor' => ['type' => 'string'],
                 'date' => ['type' => 'string'],
@@ -149,6 +151,8 @@ class OpenRouterReceiptScanner
                 ],
                 'confidence' => ['type' => 'number', 'minimum' => 0, 'maximum' => 1],
                 'warnings' => ['type' => 'array', 'items' => ['type' => 'string']],
+                'departureLocation' => ['type' => 'string'],
+                'destinationLocation' => ['type' => 'string'],
             ],
         ];
     }
