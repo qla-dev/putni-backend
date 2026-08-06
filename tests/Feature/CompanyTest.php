@@ -45,15 +45,54 @@ class CompanyTest extends TestCase
             'name' => 'QLA Renamed',
             'teamEnabled' => true,
             'shareAiTokens' => true,
+            'shareVehicles' => true,
         ])
             ->assertOk()
             ->assertJsonPath('data.name', 'QLA Renamed')
-            ->assertJsonPath('data.shareAiTokens', true);
+            ->assertJsonPath('data.shareAiTokens', true)
+            ->assertJsonPath('data.shareVehicles', true);
 
         $member = User::factory()->create();
         Sanctum::actingAs($member);
         $this->postJson('/api/company/join', ['code' => $company['inviteCode']])->assertOk();
         $this->patchJson('/api/company', ['shareAiTokens' => false])->assertForbidden();
+    }
+
+    public function test_team_members_can_see_only_vehicles_explicitly_shared_with_the_company(): void
+    {
+        $owner = User::factory()->create(['name' => 'Owner User']);
+        Sanctum::actingAs($owner);
+        $company = $this->postJson('/api/company', ['name' => 'QLA Team'])->json('data');
+        $this->patchJson('/api/company', ['shareVehicles' => true])
+            ->assertOk()
+            ->assertJsonPath('data.shareVehicles', true);
+
+        $sharedVehicle = $owner->vehicles()->create([
+            'brand' => 'Škoda',
+            'model' => 'Octavia',
+            'registration_plate' => 'A12-K-345',
+            'ownership_type' => 'poslovno',
+            'share_with_team' => true,
+        ]);
+        $owner->vehicles()->create([
+            'brand' => 'Volkswagen',
+            'model' => 'Golf',
+            'registration_plate' => '123-A-456',
+            'ownership_type' => 'privatno',
+            'share_with_team' => false,
+        ]);
+
+        $member = User::factory()->create(['name' => 'Member User']);
+        Sanctum::actingAs($member);
+        $this->postJson('/api/company/join', ['code' => $company['inviteCode']])->assertOk();
+
+        $this->getJson('/api/company')
+            ->assertOk()
+            ->assertJsonPath('data.shareVehicles', true)
+            ->assertJsonCount(1, 'data.companyVehicles')
+            ->assertJsonPath('data.companyVehicles.0.id', $sharedVehicle->id)
+            ->assertJsonPath('data.companyVehicles.0.ownerName', 'Owner User')
+            ->assertJsonPath('data.companyVehicles.0.isMine', false);
     }
 
     public function test_member_consumes_owner_credits_when_token_sharing_is_enabled(): void

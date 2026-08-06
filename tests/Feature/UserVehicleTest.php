@@ -21,7 +21,11 @@ class UserVehicleTest extends TestCase
             'model' => 'Octavia',
             'registrationPlate' => 'a12-k-345',
             'ownershipType' => 'poslovno',
-        ])->assertCreated()->assertJsonPath('data.registrationPlate', 'A12-K-345')->json('data');
+            'shareWithTeam' => true,
+        ])->assertCreated()
+            ->assertJsonPath('data.registrationPlate', 'A12-K-345')
+            ->assertJsonPath('data.shareWithTeam', true)
+            ->json('data');
 
         $this->getJson('/api/vehicles')->assertOk()->assertJsonCount(1, 'data');
 
@@ -30,7 +34,9 @@ class UserVehicleTest extends TestCase
             'model' => 'Superb',
             'registrationPlate' => 'A12-K-345',
             'ownershipType' => 'privatno',
-        ])->assertOk()->assertJsonPath('data.model', 'Superb');
+        ])->assertOk()
+            ->assertJsonPath('data.model', 'Superb')
+            ->assertJsonPath('data.shareWithTeam', true);
 
         $this->deleteJson('/api/vehicles/'.$vehicle['id'])->assertNoContent();
         $this->getJson('/api/vehicles')->assertJsonCount(0, 'data');
