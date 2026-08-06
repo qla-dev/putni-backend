@@ -57,26 +57,31 @@ class UserVehicleController extends Controller
 
     private function validated(Request $request, ?UserVehicle $vehicle = null): array
     {
+        $request->merge([
+            'registrationPlate' => strtoupper(trim((string) $request->input('registrationPlate'))),
+        ]);
         $data = $request->validate([
             'brand' => ['required', 'string', 'max:100'],
             'model' => ['required', 'string', 'max:150'],
             'registrationPlate' => [
-                'required', 'string', 'max:32',
+                'required', 'string', 'max:9', 'regex:/^(?:[A-Z]\d{2}|\d{3})-[A-Z]-\d{3}$/',
                 Rule::unique('user_vehicles', 'registration_plate')
                     ->where('user_id', $request->user()->id)
                     ->ignore($vehicle?->id),
             ],
             'ownershipType' => ['required', Rule::in(['privatno', 'poslovno'])],
+            'shareWithTeam' => ['sometimes', 'boolean'],
         ], [], [
             'registrationPlate' => 'registracijske tablice',
         ]);
 
-        return [
+        return array_filter([
             'brand' => trim($data['brand']),
             'model' => trim($data['model']),
             'registration_plate' => strtoupper(trim($data['registrationPlate'])),
             'ownership_type' => $data['ownershipType'],
-        ];
+            'share_with_team' => $data['shareWithTeam'] ?? null,
+        ], fn ($value) => $value !== null);
     }
 
     private function resource(UserVehicle $vehicle): array
@@ -87,6 +92,7 @@ class UserVehicleController extends Controller
             'model' => $vehicle->model,
             'registrationPlate' => $vehicle->registration_plate,
             'ownershipType' => $vehicle->ownership_type,
+            'shareWithTeam' => (bool) $vehicle->share_with_team,
         ];
     }
 }

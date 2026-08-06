@@ -61,6 +61,75 @@ class ReceiptScanTest extends TestCase
             ->assertJsonPath('message', 'AI skeniranje računa nije konfigurirano na serveru.');
     }
 
+    public function test_incomplete_receipt_is_normalized_instead_of_rejected(): void
+    {
+        config([
+            'services.openrouter.api_key' => 'server-secret',
+            'services.openrouter.model' => 'test-model',
+            'services.openrouter.url' => 'https://openrouter.test/chat/completions',
+        ]);
+        Http::fake([
+            'openrouter.test/*' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => json_encode([])],
+                ]],
+            ]),
+        ]);
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/receipt-scans', [
+            'images' => [['base64' => 'abc', 'mimeType' => 'image/jpeg']],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.vendor', 'Nepoznat trgovac')
+            ->assertJsonPath('data.category', 'Ostalo')
+            ->assertJsonPath('data.currency', 'EUR')
+            ->assertJsonPath('data.total', 0)
+            ->assertJsonPath('data.totalInEur', 0)
+            ->assertJsonPath('data.paymentMethod', 'Nije navedeno')
+            ->assertJsonPath('data.items', []);
+    }
+
+    public function test_incomplete_airplane_ticket_is_normalized_without_receipt_field_errors(): void
+    {
+        config([
+            'services.openrouter.api_key' => 'server-secret',
+            'services.openrouter.model' => 'test-model',
+            'services.openrouter.url' => 'https://openrouter.test/chat/completions',
+        ]);
+        Http::fake([
+            'openrouter.test/*' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => json_encode([
+                        'category' => 'Avionska karta',
+                        'vendor' => '',
+                        'departureLocation' => 'Sarajevo',
+                        'destinationLocation' => 'Berlin',
+                    ])],
+                ]],
+            ]),
+        ]);
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/receipt-scans', [
+            'images' => [['base64' => 'abc', 'mimeType' => 'image/jpeg']],
+            'documentType' => 'air-ticket',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.vendor', 'Nepoznata aviokompanija')
+            ->assertJsonPath('data.category', 'Avionska karta')
+            ->assertJsonPath('data.description', 'Avionska karta')
+            ->assertJsonPath('data.departureLocation', 'Sarajevo')
+            ->assertJsonPath('data.destinationLocation', 'Berlin')
+            ->assertJsonPath('data.total', 0);
+
+        Http::assertSent(fn ($request) =>
+            data_get($request->data(), 'response_format.json_schema.name') === 'putni_nalozi_air_ticket'
+            && str_contains((string) data_get($request->data(), 'messages.0.content'), 'departureLocation')
+            && str_contains((string) data_get($request->data(), 'messages.1.content.0.text'), 'Najvažnija polja')
+        );
+    }
+
     private function scanResult(): array
     {
         return [

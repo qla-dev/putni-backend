@@ -19,21 +19,33 @@ class UserVehicleTest extends TestCase
         $vehicle = $this->postJson('/api/vehicles', [
             'brand' => 'Škoda',
             'model' => 'Octavia',
-            'registrationPlate' => 'sa-123-aa',
+            'registrationPlate' => 'a12-k-345',
             'ownershipType' => 'poslovno',
-        ])->assertCreated()->assertJsonPath('data.registrationPlate', 'SA-123-AA')->json('data');
+        ])->assertCreated()->assertJsonPath('data.registrationPlate', 'A12-K-345')->json('data');
 
         $this->getJson('/api/vehicles')->assertOk()->assertJsonCount(1, 'data');
 
         $this->putJson('/api/vehicles/'.$vehicle['id'], [
             'brand' => 'Škoda',
             'model' => 'Superb',
-            'registrationPlate' => 'SA-123-AA',
+            'registrationPlate' => 'A12-K-345',
             'ownershipType' => 'privatno',
         ])->assertOk()->assertJsonPath('data.model', 'Superb');
 
         $this->deleteJson('/api/vehicles/'.$vehicle['id'])->assertNoContent();
         $this->getJson('/api/vehicles')->assertJsonCount(0, 'data');
+    }
+
+    public function test_registration_plate_must_match_supported_format(): void
+    {
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/vehicles', [
+            'brand' => 'Volkswagen',
+            'model' => 'Golf',
+            'registrationPlate' => 'not-a-plate',
+            'ownershipType' => 'privatno',
+        ])->assertUnprocessable()->assertJsonValidationErrors('registrationPlate');
     }
 
     public function test_user_cannot_change_another_users_vehicle(): void

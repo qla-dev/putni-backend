@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\TravelOrderResource;
 use App\Models\Company;
 use App\Models\User;
+use App\Models\UserVehicle;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -51,6 +52,7 @@ class CompanyController extends Controller
             'name' => ['sometimes', 'string', 'max:255'],
             'teamEnabled' => ['sometimes', 'boolean'],
             'shareAiTokens' => ['sometimes', 'boolean'],
+            'shareVehicles' => ['sometimes', 'boolean'],
         ]);
         $company = $request->user()->ownedCompany;
         abort_unless($company, 403, 'Only a company owner can change team settings.');
@@ -59,10 +61,11 @@ class CompanyController extends Controller
             'name' => isset($validated['name']) ? trim($validated['name']) : null,
             'team_enabled' => $validated['teamEnabled'] ?? null,
             'share_ai_tokens' => $validated['shareAiTokens'] ?? null,
+            'share_vehicles' => $validated['shareVehicles'] ?? null,
         ], fn ($value) => $value !== null && $value !== ''));
 
-        if (! $company->team_enabled && $company->share_ai_tokens) {
-            $company->update(['share_ai_tokens' => false]);
+        if (! $company->team_enabled && ($company->share_ai_tokens || $company->share_vehicles)) {
+            $company->update(['share_ai_tokens' => false, 'share_vehicles' => false]);
         }
 
         return response()->json(['data' => $this->payload($company, $request->user())]);
@@ -135,6 +138,14 @@ class CompanyController extends Controller
             ])
             ->get()
             ->sum('team_orders_count');
+        $companyVehicles = $company->share_vehicles
+            ? UserVehicle::query()
+                ->with('user:id,name')
+                ->whereIn('user_id', $company->members->pluck('id'))
+                ->where('share_with_team', true)
+                ->latest()
+                ->get()
+            : collect();
 
         return [
             'id' => $company->id,
@@ -142,6 +153,18 @@ class CompanyController extends Controller
             'inviteCode' => $company->invite_code,
             'teamEnabled' => $company->team_enabled,
             'shareAiTokens' => $company->share_ai_tokens,
+            'shareVehicles' => $company->share_vehicles,
+            'companyVehicles' => $companyVehicles->map(fn (UserVehicle $vehicle) => [
+                'id' => $vehicle->id,
+                'brand' => $vehicle->brand,
+                'model' => $vehicle->model,
+                'registrationPlate' => $vehicle->registration_plate,
+                'ownershipType' => $vehicle->ownership_type,
+                'shareWithTeam' => true,
+                'ownerId' => $vehicle->user_id,
+                'ownerName' => $vehicle->user->name,
+                'isMine' => $vehicle->user_id === $viewer->id,
+            ])->values()->all(),
             'teamOrdersProcessed' => $teamOrdersProcessed,
             'teamRemainingAiOrders' => $company->share_ai_tokens
                 ? (int) $company->owner->ai_order_credits

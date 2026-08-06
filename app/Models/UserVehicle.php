@@ -9,5 +9,15 @@ class UserVehicle extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['brand', 'model', 'registration_plate', 'ownership_type'];
+    protected $fillable = ['brand', 'model', 'registration_plate', 'ownership_type', 'share_with_team'];
+
+    protected function casts(): array
+    {
+        return ['share_with_team' => 'boolean'];
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 }

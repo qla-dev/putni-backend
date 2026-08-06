@@ -4,15 +4,22 @@ namespace App\Services;
 
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 use RuntimeException;
 
 class OpenRouterReceiptScanner
 {
-    public function scan(array $images): array
+    public function scan(array $images, string $documentType = 'receipt'): array
     {
+        $isAirTicket = $documentType === 'air-ticket';
+        $systemPrompt = $isAirTicket
+            ? 'Očitavaš isključivo avionsku kartu ili boarding pass za putni nalog. Obavezno prepoznaj stvarno mjesto polaska u departureLocation i krajnje odredište u destinationLocation. Kod karte sa smjerom, grad lijevo ili prije strelice/aviona je polazak, a grad desno ili poslije strelice/aviona je odredište. Postavi category na Avionska karta. Očitaj aviokompaniju ako je prikazana; ako nije, vendor ostavi prazan. Za nepostojeće iznose, PDV, način plaćanja i stavke koristi prazne vrijednosti, nule ili prazan niz. Ne izmišljaj gradove. Vrati samo podatke iz zadane JSON sheme.'
+            : 'Precizno očitaj račun za putni nalog. Ne izmišljaj nečitljive vrijednosti. departureLocation i destinationLocation ostavi prazne. Valutu odredi isključivo iz oznake ili simbola na dokumentu i vrati njen ISO 4217 kod. Ukupan iznos preračunaj u EUR u polje totalInEur; ako je dokument u EUR, totalInEur mora biti jednak polju total. Polja koja nisu prikazana vrati kao prazne stringove, nule ili prazne nizove. Vrati samo podatke koji odgovaraju zadanoj JSON shemi.';
+        $userPrompt = $isAirTicket
+            ? 'Očitaj polazak, krajnje odredište, aviokompaniju, datum leta, broj karte ili rezervacije, valutu i iznos ako su prikazani. Najvažnija polja su departureLocation i destinationLocation.'
+            : 'Očitaj trgovca, datum, broj računa, kategoriju, valutu kao ISO 4217 kod, osnovicu, PDV, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu.';
+
         $response = Http::withToken((string) config('services.openrouter.api_key'))
             ->acceptJson()
             ->timeout(90)
@@ -27,7 +34,7 @@ class OpenRouterReceiptScanner
                 'response_format' => [
                     'type' => 'json_schema',
                     'json_schema' => [
-                        'name' => 'putni_nalozi_receipt',
+                        'name' => $isAirTicket ? 'putni_nalozi_air_ticket' : 'putni_nalozi_receipt',
                         'strict' => true,
                         'schema' => $this->schema(),
                     ],
@@ -35,14 +42,14 @@ class OpenRouterReceiptScanner
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'Precizno očitaj račun ili avionsku kartu za putni nalog. Ne izmišljaj nečitljive vrijednosti. Za avionsku kartu vrati mjesto polaska u departureLocation i krajnje odredište u destinationLocation; za ostale račune vrati prazne stringove. Valutu odredi isključivo iz oznake ili simbola na dokumentu i vrati njen ISO 4217 kod. Ukupan iznos preračunaj u EUR u polje totalInEur; ako je dokument u EUR, totalInEur mora biti jednak polju total. Vrati samo podatke koji odgovaraju zadanoj JSON shemi.',
+                        'content' => $systemPrompt,
                     ],
                     [
                         'role' => 'user',
                         'content' => [
                             [
                                 'type' => 'text',
-                                'text' => 'Očitaj trgovca ili aviokompaniju, datum, broj računa ili karte, kategoriju, valutu kao ISO 4217 kod, osnovicu, PDV, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu. Ako je dokument avionska karta, očitaj i mjesto polaska te krajnje odredište.',
+                                'text' => $userPrompt,
                             ],
                             ...array_map(fn (array $image) => [
                                 'type' => 'image_url',
@@ -63,17 +70,16 @@ class OpenRouterReceiptScanner
             throw new RuntimeException('AI servis je vratio neispravan rezultat skeniranja.');
         }
 
-        Validator::make($result, $this->resultRules())->validate();
-
-        return $result;
+        return $this->normalizeResult(is_array($result) ? $result : [], $documentType);
     }
 
     private function ensureSuccessful(Response $response): void
     {
         if ($response->successful()) return;
 
-        $message = $response->json('error.message') ?: 'AI skeniranje računa trenutno nije dostupno.';
-        throw ValidationException::withMessages(['images' => [$message]]);
+        throw ValidationException::withMessages([
+            'images' => ['AI skeniranje trenutno nije dostupno. Pokušajte ponovo.'],
+        ]);
     }
 
     private function outputText(array $payload): string
@@ -88,32 +94,76 @@ class OpenRouterReceiptScanner
         throw new RuntimeException(data_get($payload, 'error.message', 'AI servis nije vratio rezultat skeniranja.'));
     }
 
-    private function resultRules(): array
+    private function normalizeResult(array $result, string $documentType): array
     {
+        $allowedCategories = ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Avionska karta', 'Ostalo'];
+        $category = $documentType === 'air-ticket'
+            ? 'Avionska karta'
+            : $this->stringValue($result['category'] ?? '');
+        if (! in_array($category, $allowedCategories, true)) $category = 'Ostalo';
+
+        $currency = strtoupper($this->stringValue($result['currency'] ?? ''));
+        if ($currency === '') $currency = 'EUR';
+
+        $total = $this->numericValue($result['total'] ?? 0);
+        $totalInEur = is_numeric($result['totalInEur'] ?? null)
+            ? $this->numericValue($result['totalInEur'])
+            : ($currency === 'EUR' ? $total : 0.0);
+
+        $items = [];
+        foreach ((is_array($result['items'] ?? null) ? $result['items'] : []) as $item) {
+            if (! is_array($item)) continue;
+            $items[] = [
+                'name' => $this->stringValue($item['name'] ?? '', 'Stavka'),
+                'quantity' => $this->numericValue($item['quantity'] ?? 0),
+                'unitPrice' => $this->numericValue($item['unitPrice'] ?? 0),
+                'total' => $this->numericValue($item['total'] ?? 0),
+                'vatRate' => $this->numericValue($item['vatRate'] ?? 0),
+            ];
+        }
+
+        $warnings = array_values(array_filter(
+            is_array($result['warnings'] ?? null) ? $result['warnings'] : [],
+            fn ($warning) => is_string($warning) && trim($warning) !== '',
+        ));
+
+        $vendorFallback = $category === 'Avionska karta'
+            ? 'Nepoznata aviokompanija'
+            : 'Nepoznat trgovac';
+
         return [
-            'vendor' => ['required', 'string'],
-            'date' => ['present', 'string'],
-            'receiptNumber' => ['present', 'string'],
-            'category' => ['required', 'in:Gorivo,Smještaj,Prehrana,Cestarina,Parking,Avionska karta,Ostalo'],
-            'currency' => ['required', 'string'],
-            'subtotal' => ['required', 'numeric'],
-            'vat' => ['required', 'numeric'],
-            'total' => ['required', 'numeric'],
-            'totalInEur' => ['required', 'numeric'],
-            'paymentMethod' => ['required', 'string'],
-            'description' => ['required', 'string'],
-            'items' => ['required', 'array'],
-            'items.*.name' => ['required', 'string'],
-            'items.*.quantity' => ['required', 'numeric'],
-            'items.*.unitPrice' => ['required', 'numeric'],
-            'items.*.total' => ['required', 'numeric'],
-            'items.*.vatRate' => ['required', 'numeric'],
-            'confidence' => ['required', 'numeric', 'between:0,1'],
-            'warnings' => ['present', 'array'],
-            'warnings.*' => ['string'],
-            'departureLocation' => ['present', 'string'],
-            'destinationLocation' => ['present', 'string'],
+            'vendor' => $this->stringValue($result['vendor'] ?? '', $vendorFallback),
+            'date' => $this->stringValue($result['date'] ?? ''),
+            'receiptNumber' => $this->stringValue($result['receiptNumber'] ?? ''),
+            'category' => $category,
+            'currency' => $currency,
+            'subtotal' => $this->numericValue($result['subtotal'] ?? 0),
+            'vat' => $this->numericValue($result['vat'] ?? 0),
+            'total' => $total,
+            'totalInEur' => $totalInEur,
+            'paymentMethod' => $this->stringValue($result['paymentMethod'] ?? '', 'Nije navedeno'),
+            'description' => $this->stringValue(
+                $result['description'] ?? '',
+                $category === 'Avionska karta' ? 'Avionska karta' : 'Račun',
+            ),
+            'items' => $items,
+            'confidence' => max(0.0, min(1.0, $this->numericValue($result['confidence'] ?? 0))),
+            'warnings' => $warnings,
+            'departureLocation' => $this->stringValue($result['departureLocation'] ?? ''),
+            'destinationLocation' => $this->stringValue($result['destinationLocation'] ?? ''),
         ];
+    }
+
+    private function stringValue(mixed $value, string $fallback = ''): string
+    {
+        if (! is_string($value) && ! is_numeric($value)) return $fallback;
+        $normalized = trim((string) $value);
+        return $normalized !== '' ? $normalized : $fallback;
+    }
+
+    private function numericValue(mixed $value): float
+    {
+        return is_numeric($value) ? (float) $value : 0.0;
     }
 
     private function schema(): array
