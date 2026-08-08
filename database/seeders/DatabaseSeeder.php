@@ -13,5 +13,6 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(ExportFormatSeeder::class);
         $this->call(VehicleCatalogSeeder::class);
+        $this->call(AllowanceRateSeeder::class);
     }
 }

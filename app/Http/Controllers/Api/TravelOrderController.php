@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TravelOrderResource;
+use App\Models\TravelOrder;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +46,7 @@ class TravelOrderController extends Controller
         $order = $request->user()->travelOrders()
             ->where('client_id', $travelOrder)
             ->firstOrFail();
-        $order->update($this->validated($request, true));
+        $order->update($this->validated($request, true, $order));
 
         return new TravelOrderResource($order->refresh());
     }
@@ -60,7 +61,7 @@ class TravelOrderController extends Controller
         return response()->noContent();
     }
 
-    private function validated(Request $request, bool $partial = false): array
+    private function validated(Request $request, bool $partial = false, ?TravelOrder $existingOrder = null): array
     {
         $required = $partial ? 'sometimes' : 'required';
         $data = $request->validate([
@@ -89,6 +90,11 @@ class TravelOrderController extends Controller
             'totalKmCost' => [$required, 'numeric', 'min:0'],
             'dailyAllowanceRateEur' => [$required, 'numeric', 'min:0'],
             'totalAllowanceCost' => [$required, 'numeric', 'min:0'],
+            'breakfastIncluded' => [$required, 'boolean'],
+            'lunchIncluded' => [$required, 'boolean'],
+            'dinnerIncluded' => [$required, 'boolean'],
+            'hotelIncluded' => [$required, 'boolean'],
+            'residenceDistanceKm' => [$required, 'numeric', 'min:0'],
             'expenses' => [$partial ? 'sometimes' : 'present', 'array'],
             'expenses.*.id' => ['required', 'string', 'max:100'],
             'expenses.*.category' => ['required', 'string', 'max:100'],
@@ -143,6 +149,11 @@ class TravelOrderController extends Controller
             'totalKmCost' => 'total_km_cost',
             'dailyAllowanceRateEur' => 'daily_allowance_rate_eur',
             'totalAllowanceCost' => 'total_allowance_cost',
+            'breakfastIncluded' => 'breakfast_included',
+            'lunchIncluded' => 'lunch_included',
+            'dinnerIncluded' => 'dinner_included',
+            'hotelIncluded' => 'hotel_included',
+            'residenceDistanceKm' => 'residence_distance_km',
             'totalExpensesCost' => 'total_expenses_cost',
             'advancementPaid' => 'advancement_paid',
             'grandTotal' => 'grand_total',
@@ -155,6 +166,22 @@ class TravelOrderController extends Controller
                 $data[$column] = $data[$input];
                 unset($data[$input]);
             }
+        }
+
+        if ($partial && $existingOrder) {
+            $data = array_merge([
+                'total_hours' => $existingOrder->total_hours,
+                'total_km' => $existingOrder->total_km,
+                'daily_allowance_rate_eur' => $existingOrder->daily_allowance_rate_eur,
+                'total_km_cost' => $existingOrder->total_km_cost,
+                'total_expenses_cost' => $existingOrder->total_expenses_cost,
+                'advancement_paid' => $existingOrder->advancement_paid,
+                'breakfast_included' => $existingOrder->breakfast_included,
+                'lunch_included' => $existingOrder->lunch_included,
+                'dinner_included' => $existingOrder->dinner_included,
+                'hotel_included' => $existingOrder->hotel_included,
+                'residence_distance_km' => $existingOrder->residence_distance_km,
+            ], $data);
         }
 
         return $data;
