@@ -12,7 +12,12 @@ class AllowanceRateSeeder extends Seeder
      */
     public function run(): void
     {
-        DB::table('allowance_rates')->insert([
+        DB::table('allowance_rates')->insert(array_map(static function (array $rate): array {
+            $rate['rate_bam'] = $rate['rate_eur'];
+            unset($rate['rate_eur']);
+
+            return $rate;
+        }, [
             ['country' => 'Bosnia and Herzegovina', 'rate_km' => 0, 'rate_eur' => 45.00, 'region' => 'BiH', 'is_default' => false, 'created_at' => now(), 'updated_at' => now()],
             ['country' => 'Albania', 'rate_km' => 0, 'rate_eur' => 90.00, 'region' => 'International', 'is_default' => true, 'created_at' => now(), 'updated_at' => now()],
             ['country' => 'Andorra', 'rate_km' => 0, 'rate_eur' => 90.00, 'region' => 'International', 'is_default' => true, 'created_at' => now(), 'updated_at' => now()],
@@ -163,6 +168,6 @@ class AllowanceRateSeeder extends Seeder
             ['country' => 'Panama', 'rate_km' => 0, 'rate_eur' => 90.00, 'region' => 'International', 'is_default' => true, 'created_at' => now(), 'updated_at' => now()],
             ['country' => 'Costa Rica', 'rate_km' => 0, 'rate_eur' => 90.00, 'region' => 'International', 'is_default' => true, 'created_at' => now(), 'updated_at' => now()],
             ['country' => 'Nicaragua', 'rate_km' => 0, 'rate_eur' => 90.00, 'region' => 'International', 'is_default' => true, 'created_at' => now(), 'updated_at' => now()],
-        ]);
+        ]));
     }
 }

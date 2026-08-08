@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AllowanceRateController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\LampyrisAuthController;
 use App\Http\Controllers\Api\RevenueCatController;
@@ -39,6 +40,7 @@ Route::prefix('lampyris/auth')->group(function () {
 });
 
 Route::middleware(['auth:sanctum', 'putni.user'])->group(function () {
+    Route::get('allowance-rates', [AllowanceRateController::class, 'index']);
     Route::get('vehicles/catalog', [UserVehicleController::class, 'catalog']);
     Route::apiResource('vehicles', UserVehicleController::class)->only(['index', 'store', 'update', 'destroy']);
     Route::post('receipt-scans', [ReceiptScanController::class, 'store'])
