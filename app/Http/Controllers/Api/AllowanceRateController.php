@@ -9,7 +9,7 @@ class AllowanceRateController extends Controller
 {
     public function index()
     {
-        return AllowanceRate::query()
+        $rates = AllowanceRate::query()
             ->orderByDesc('is_default')
             ->orderBy('country')
             ->get(['country', 'rate_bam', 'is_default'])
@@ -18,5 +18,7 @@ class AllowanceRateController extends Controller
                 'rateBam' => $rate->rate_bam,
                 'isDefault' => $rate->is_default,
             ]);
+
+        return response()->json(['data' => $rates]);
     }
 }

@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
             $table->string('country')->unique();
             $table->decimal('rate_km', 12, 2)->default(0);
-            $table->decimal('rate_eur', 12, 2)->default(0);
+            $table->decimal('rate_bam', 12, 2)->default(0);
             $table->string('region')->nullable();
             $table->boolean('is_default')->default(false);
             $table->timestamps();

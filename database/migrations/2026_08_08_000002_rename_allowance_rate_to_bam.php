@@ -8,15 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('allowance_rates', function (Blueprint $table) {
-            $table->renameColumn('rate_eur', 'rate_bam');
-        });
+        if (Schema::hasColumn('allowance_rates', 'rate_eur')) {
+            Schema::table('allowance_rates', function (Blueprint $table) {
+                $table->renameColumn('rate_eur', 'rate_bam');
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('allowance_rates', function (Blueprint $table) {
-            $table->renameColumn('rate_bam', 'rate_eur');
-        });
+        if (Schema::hasColumn('allowance_rates', 'rate_bam')) {
+            Schema::table('allowance_rates', function (Blueprint $table) {
+                $table->renameColumn('rate_bam', 'rate_eur');
+            });
+        }
     }
 };
