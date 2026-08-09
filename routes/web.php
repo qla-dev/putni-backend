@@ -6,13 +6,6 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-Route::prefix('putni-nalozi')->group(function () {
-    Route::view('privacy', 'legal', ['page' => 'privacy'])->name('legal.privacy');
-    Route::view('terms', 'legal', ['page' => 'terms'])->name('legal.terms');
-    Route::view('cookies', 'legal', ['page' => 'cookies'])->name('legal.cookies');
-    Route::view('help', 'help')->name('putni-nalozi.help');
-});
-
 Route::get('invite/{code}', function (string $code) {
     return response()
         ->view('invite', ['code' => strtoupper($code)])
