@@ -14,15 +14,15 @@ class OpenRouterReceiptScanner
     {
         $isAirTicket = $documentType === 'air-ticket';
         $systemPrompt = $isAirTicket
-            ? 'Očitavaš isključivo avionsku kartu ili boarding pass za putni nalog. Obavezno prepoznaj stvarno mjesto polaska u departureLocation i krajnje odredište u destinationLocation. Kod karte sa smjerom, grad lijevo ili prije strelice/aviona je polazak, a grad desno ili poslije strelice/aviona je odredište. Postavi category na Avionska karta. Očitaj aviokompaniju ako je prikazana; ako nije, vendor ostavi prazan. Za nepostojeće iznose, PDV, način plaćanja i stavke koristi prazne vrijednosti, nule ili prazan niz. Ne izmišljaj gradove. Vrati samo podatke iz zadane JSON sheme.'
-            : 'Precizno očitaj račun za putni nalog. Ne izmišljaj nečitljive vrijednosti. departureLocation i destinationLocation ostavi prazne. Valutu odredi isključivo iz oznake ili simbola na dokumentu i vrati njen ISO 4217 kod. Ukupan iznos preračunaj u EUR u polje totalInEur; ako je dokument u EUR, totalInEur mora biti jednak polju total. Polja koja nisu prikazana vrati kao prazne stringove, nule ili prazne nizove. Vrati samo podatke koji odgovaraju zadanoj JSON shemi.';
+            ? 'Očitavaš isključivo avionsku kartu ili boarding pass za putni nalog. Obavezno prepoznaj stvarno mjesto polaska u departureLocation i krajnje odredište u destinationLocation. Kod karte sa smjerom, grad lijevo ili prije strelice/aviona je polazak, a grad desno ili poslije strelice/aviona je odredište. Postavi category na Avionska karta. Očitaj datum leta obavezno i vrati ga u formatu YYYY-MM-DD; ako nije čitljiv, vrati prazan string. Očitaj aviokompaniju ako je prikazana; ako nije, vendor ostavi prazan. Za nepostojeće iznose, PDV, način plaćanja i stavke koristi prazne vrijednosti, nule ili prazan niz. Ne izmišljaj gradove. Vrati samo podatke iz zadane JSON sheme.'
+            : 'Precizno očitaj račun za putni nalog. Ne izmišljaj nečitljive vrijednosti. Datum računa je obavezan: očitaj stvarni datum s dokumenta i vrati ga isključivo u formatu YYYY-MM-DD. Ako datum nije čitljiv, vrati prazan string. departureLocation i destinationLocation ostavi prazne. Valutu odredi isključivo iz oznake ili simbola na dokumentu i vrati njen ISO 4217 kod. Ukupan iznos preračunaj u EUR u polje totalInEur; ako je dokument u EUR, totalInEur mora biti jednak polju total. Polja koja nisu prikazana vrati kao prazne stringove, nule ili prazne nizove. Vrati samo podatke koji odgovaraju zadanoj JSON shemi.';
         $userPrompt = $isAirTicket
-            ? 'Očitaj polazak, krajnje odredište, aviokompaniju, datum leta, broj karte ili rezervacije, valutu i iznos ako su prikazani. Najvažnija polja su departureLocation i destinationLocation.'
-            : 'Očitaj trgovca, datum, broj računa, kategoriju, valutu kao ISO 4217 kod, osnovicu, PDV, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu.';
+            ? 'Očitaj polazak, krajnje odredište, aviokompaniju, datum leta u formatu YYYY-MM-DD, broj karte ili rezervacije, valutu i iznos ako su prikazani. Najvažnija polja su departureLocation i destinationLocation.'
+            : 'Očitaj trgovca, datum računa obavezno u formatu YYYY-MM-DD, broj računa, kategoriju, valutu kao ISO 4217 kod, osnovicu, PDV, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu.';
 
         if ($documentType === 'transport-ticket') {
-            $systemPrompt = 'Read a transport ticket for a travel order: plane, bus, or train. Extract the real departure city into departureLocation and final destination city into destinationLocation. Do not invent locations. Extract the carrier, travel date, ticket or booking number, currency, and amount where shown. Return only the requested JSON schema.';
-            $userPrompt = 'Read this transport ticket. Departure and destination are the most important fields.';
+            $systemPrompt = 'Read a transport ticket for a travel order: plane, bus, or train. Extract the real departure city into departureLocation and final destination city into destinationLocation. Do not invent locations. Extract the travel date in YYYY-MM-DD format; return an empty string if it cannot be read. Extract the carrier, ticket or booking number, currency, and amount where shown. Return only the requested JSON schema.';
+            $userPrompt = 'Read this transport ticket. Departure, destination, and travel date in YYYY-MM-DD are required.';
         }
 
         $response = Http::withToken((string) config('services.openrouter.api_key'))
@@ -101,7 +101,7 @@ class OpenRouterReceiptScanner
 
     private function normalizeResult(array $result, string $documentType): array
     {
-        $allowedCategories = ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Avionska karta', 'Ostalo'];
+        $allowedCategories = ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Ostalo'];
         $category = $documentType === 'air-ticket'
             ? 'Avionska karta'
             : $this->stringValue($result['category'] ?? '');
@@ -136,9 +136,15 @@ class OpenRouterReceiptScanner
             ? 'Nepoznata aviokompanija'
             : 'Nepoznat trgovac';
 
+        $date = $this->stringValue($result['date'] ?? '');
+        $parsedDate = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        if ($date === '' || ! $parsedDate || $parsedDate->format('Y-m-d') !== $date) {
+            $date = now()->toDateString();
+        }
+
         return [
             'vendor' => $this->stringValue($result['vendor'] ?? '', $vendorFallback),
-            'date' => $this->stringValue($result['date'] ?? ''),
+            'date' => $date,
             'receiptNumber' => $this->stringValue($result['receiptNumber'] ?? ''),
             'category' => $category,
             'currency' => $currency,
@@ -181,7 +187,7 @@ class OpenRouterReceiptScanner
                 'vendor' => ['type' => 'string'],
                 'date' => ['type' => 'string'],
                 'receiptNumber' => ['type' => 'string'],
-                'category' => ['type' => 'string', 'enum' => ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Avionska karta', 'Ostalo']],
+                'category' => ['type' => 'string', 'enum' => ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Ostalo']],
                 'currency' => ['type' => 'string'],
                 'subtotal' => ['type' => 'number'],
                 'vat' => ['type' => 'number'],

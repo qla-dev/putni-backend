@@ -33,6 +33,7 @@ class TravelOrderResource extends JsonResource
             'vehiclePlate' => $this->vehicle_plate,
             'totalKm' => $this->total_km,
             'totalKmCost' => $this->total_km_cost,
+            'bmb95Price' => $this->bmb95_price,
             'dailyAllowanceRateEur' => $this->daily_allowance_rate_eur,
             'totalAllowanceCost' => $this->total_allowance_cost,
             'breakfastIncluded' => $this->breakfast_included,
