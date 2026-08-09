@@ -21,7 +21,7 @@ class OpenRouterReceiptScanner
             : 'Očitaj trgovca, datum računa obavezno u formatu YYYY-MM-DD, broj računa, kategoriju, valutu kao ISO 4217 kod, osnovicu, PDV, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu.';
 
         if ($documentType === 'transport-ticket') {
-            $systemPrompt = 'Read a transport ticket for a travel order: plane, bus, or train. Extract the real departure city into departureLocation and final destination city into destinationLocation. Also extract their countries into departureCountry and destinationCountry, using standard English country names (for example, Bosnia and Herzegovina, Croatia). Do not invent locations or countries. Extract the travel date in YYYY-MM-DD format; return an empty string if it cannot be read. Extract the carrier, ticket or booking number, currency, and amount where shown. Return only the requested JSON schema.';
+            $systemPrompt = 'Read a transport ticket for a travel order: plane, bus, or train. Set category exactly to Avionska karta for a plane ticket, Autobuska karta for a bus ticket, Vozna karta for a train ticket, or Prijevozna karta only when the transport type cannot be identified. Extract the real departure city into departureLocation and final destination city into destinationLocation. Also extract their countries into departureCountry and destinationCountry, using standard English country names (for example, Bosnia and Herzegovina, Croatia). Do not invent locations or countries. Extract the travel date in YYYY-MM-DD format; return an empty string if it cannot be read. Extract the carrier, ticket or booking number, currency, and amount where shown. Return only the requested JSON schema.';
             $userPrompt = 'Read this transport ticket. Departure, departure country, destination, destination country, and travel date in YYYY-MM-DD are required when visible.';
         }
 
@@ -101,7 +101,7 @@ class OpenRouterReceiptScanner
 
     private function normalizeResult(array $result, string $documentType): array
     {
-        $allowedCategories = ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Ostalo'];
+        $allowedCategories = ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Autobuska karta', 'Vozna karta', 'Prijevozna karta', 'Ostalo'];
         $category = $documentType === 'air-ticket'
             ? 'Avionska karta'
             : $this->stringValue($result['category'] ?? '');
@@ -189,7 +189,7 @@ class OpenRouterReceiptScanner
                 'vendor' => ['type' => 'string'],
                 'date' => ['type' => 'string'],
                 'receiptNumber' => ['type' => 'string'],
-                'category' => ['type' => 'string', 'enum' => ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Ostalo']],
+                'category' => ['type' => 'string', 'enum' => ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Autobuska karta', 'Vozna karta', 'Prijevozna karta', 'Ostalo']],
                 'currency' => ['type' => 'string'],
                 'subtotal' => ['type' => 'number'],
                 'vat' => ['type' => 'number'],
