@@ -27,6 +27,7 @@ class TravelOrderResource extends JsonResource
             'departureTime' => $this->departure_time?->toIso8601String(),
             'arrivalTime' => $this->arrival_time?->toIso8601String(),
             'routeStopTimes' => $this->route_stop_times ?? [],
+            'routeStopCountries' => $this->route_stop_countries ?? [],
             'totalHours' => $this->total_hours,
             'transportType' => $this->transport_type,
             'vehicleName' => $this->vehicle_name,
