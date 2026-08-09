@@ -20,6 +20,11 @@ class OpenRouterReceiptScanner
             ? 'Očitaj polazak, krajnje odredište, aviokompaniju, datum leta, broj karte ili rezervacije, valutu i iznos ako su prikazani. Najvažnija polja su departureLocation i destinationLocation.'
             : 'Očitaj trgovca, datum, broj računa, kategoriju, valutu kao ISO 4217 kod, osnovicu, PDV, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu.';
 
+        if ($documentType === 'transport-ticket') {
+            $systemPrompt = 'Read a transport ticket for a travel order: plane, bus, or train. Extract the real departure city into departureLocation and final destination city into destinationLocation. Do not invent locations. Extract the carrier, travel date, ticket or booking number, currency, and amount where shown. Return only the requested JSON schema.';
+            $userPrompt = 'Read this transport ticket. Departure and destination are the most important fields.';
+        }
+
         $response = Http::withToken((string) config('services.openrouter.api_key'))
             ->acceptJson()
             ->timeout(90)
