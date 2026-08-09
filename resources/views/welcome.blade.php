@@ -273,5 +273,11 @@
         @if (Route::has('login'))
             <div class="h-14.5 hidden lg:block"></div>
         @endif
+        <footer style="position:fixed;right:16px;bottom:14px;display:flex;gap:12px;font:12px/1.4 system-ui,sans-serif;color:#6b7280;z-index:10">
+            <a style="color:inherit" href="/putni-nalozi/privacy">Privatnost</a>
+            <a style="color:inherit" href="/putni-nalozi/terms">Uslovi</a>
+            <a style="color:inherit" href="/putni-nalozi/cookies">Kolačići</a>
+            <a style="color:inherit" href="/putni-nalozi/help">Pomoć</a>
+        </footer>
     </body>
 </html>
