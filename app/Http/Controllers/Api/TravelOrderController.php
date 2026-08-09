@@ -74,8 +74,10 @@ class TravelOrderController extends Controller
             'employeeTitle' => [$required, 'string', 'max:255'],
             'employeeOib' => [$required, 'string', 'max:50'],
             'employeeIban' => [$required, 'string', 'max:50'],
-            'companyName' => [$required, 'string', 'max:255'],
-            'companyOib' => [$required, 'string', 'max:50'],
+            // A draft order may be created before company details are filled in.
+            // Export is gated in the app until those details are complete.
+            'companyName' => [$partial ? 'sometimes' : 'present', 'nullable', 'string', 'max:255'],
+            'companyOib' => [$partial ? 'sometimes' : 'present', 'nullable', 'string', 'max:50'],
             'route' => [$required, 'string', 'max:1000'],
             'startLocation' => ['sometimes', 'nullable', 'string', 'max:255'],
             'destinationCountry' => [$required, 'string', 'max:255'],
@@ -131,6 +133,11 @@ class TravelOrderController extends Controller
             'notes' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'approvedBy' => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
+
+        // Laravel converts empty strings to null; keep database values as empty
+        // strings while company details are intentionally unfinished.
+        if (array_key_exists('companyName', $data)) $data['companyName'] ??= '';
+        if (array_key_exists('companyOib', $data)) $data['companyOib'] ??= '';
 
         $map = [
             'id' => 'client_id',
