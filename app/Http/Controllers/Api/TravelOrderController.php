@@ -14,8 +14,10 @@ class TravelOrderController extends Controller
 {
     public function index(Request $request)
     {
+        $limit = min(max((int) $request->integer('limit', 10), 1), 50);
+
         return TravelOrderResource::collection(
-            $request->user()->travelOrders()->latest()->get()
+            $request->user()->travelOrders()->latest()->paginate($limit)
         );
     }
 
