@@ -14,15 +14,15 @@ class OpenRouterReceiptScanner
     {
         $isAirTicket = $documentType === 'air-ticket';
         $systemPrompt = $isAirTicket
-            ? 'Očitavaš isključivo avionsku kartu ili boarding pass za putni nalog. Obavezno prepoznaj stvarno mjesto polaska u departureLocation i krajnje odredište u destinationLocation. Kod karte sa smjerom, grad lijevo ili prije strelice/aviona je polazak, a grad desno ili poslije strelice/aviona je odredište. Postavi category na Avionska karta. Očitaj datum leta obavezno i vrati ga u formatu YYYY-MM-DD; ako nije čitljiv, vrati prazan string. Očitaj aviokompaniju ako je prikazana; ako nije, vendor ostavi prazan. Za nepostojeće iznose, PDV, način plaćanja i stavke koristi prazne vrijednosti, nule ili prazan niz. Ne izmišljaj gradove. Vrati samo podatke iz zadane JSON sheme.'
+            ? 'Očitavaš isključivo avionsku kartu ili boarding pass za putni nalog. Obavezno prepoznaj stvarno mjesto polaska u departureLocation i krajnje odredište u destinationLocation, te države tih mjesta u departureCountry i destinationCountry. Koristi standardna engleska imena država (npr. Bosnia and Herzegovina, Croatia). Kod karte sa smjerom, grad lijevo ili prije strelice/aviona je polazak, a grad desno ili poslije strelice/aviona je odredište. Postavi category na Avionska karta. Očitaj datum leta obavezno i vrati ga u formatu YYYY-MM-DD; ako nije čitljiv, vrati prazan string. Očitaj aviokompaniju ako je prikazana; ako nije, vendor ostavi prazan. Za nepostojeće iznose, PDV, način plaćanja i stavke koristi prazne vrijednosti, nule ili prazan niz. Ne izmišljaj gradove ni države. Vrati samo podatke iz zadane JSON sheme.'
             : 'Precizno očitaj račun za putni nalog. Ne izmišljaj nečitljive vrijednosti. Datum računa je obavezan: očitaj stvarni datum s dokumenta i vrati ga isključivo u formatu YYYY-MM-DD. Ako datum nije čitljiv, vrati prazan string. departureLocation i destinationLocation ostavi prazne. Valutu odredi isključivo iz oznake ili simbola na dokumentu i vrati njen ISO 4217 kod. Ukupan iznos preračunaj u EUR u polje totalInEur; ako je dokument u EUR, totalInEur mora biti jednak polju total. Polja koja nisu prikazana vrati kao prazne stringove, nule ili prazne nizove. Vrati samo podatke koji odgovaraju zadanoj JSON shemi.';
         $userPrompt = $isAirTicket
-            ? 'Očitaj polazak, krajnje odredište, aviokompaniju, datum leta u formatu YYYY-MM-DD, broj karte ili rezervacije, valutu i iznos ako su prikazani. Najvažnija polja su departureLocation i destinationLocation.'
+            ? 'Očitaj polazak, državu polaska, krajnje odredište, državu odredišta, aviokompaniju, datum leta u formatu YYYY-MM-DD, broj karte ili rezervacije, valutu i iznos ako su prikazani. Najvažnija polja su departureLocation, departureCountry, destinationLocation i destinationCountry.'
             : 'Očitaj trgovca, datum računa obavezno u formatu YYYY-MM-DD, broj računa, kategoriju, valutu kao ISO 4217 kod, osnovicu, PDV, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu.';
 
         if ($documentType === 'transport-ticket') {
-            $systemPrompt = 'Read a transport ticket for a travel order: plane, bus, or train. Extract the real departure city into departureLocation and final destination city into destinationLocation. Do not invent locations. Extract the travel date in YYYY-MM-DD format; return an empty string if it cannot be read. Extract the carrier, ticket or booking number, currency, and amount where shown. Return only the requested JSON schema.';
-            $userPrompt = 'Read this transport ticket. Departure, destination, and travel date in YYYY-MM-DD are required.';
+            $systemPrompt = 'Read a transport ticket for a travel order: plane, bus, or train. Extract the real departure city into departureLocation and final destination city into destinationLocation. Also extract their countries into departureCountry and destinationCountry, using standard English country names (for example, Bosnia and Herzegovina, Croatia). Do not invent locations or countries. Extract the travel date in YYYY-MM-DD format; return an empty string if it cannot be read. Extract the carrier, ticket or booking number, currency, and amount where shown. Return only the requested JSON schema.';
+            $userPrompt = 'Read this transport ticket. Departure, departure country, destination, destination country, and travel date in YYYY-MM-DD are required when visible.';
         }
 
         $response = Http::withToken((string) config('services.openrouter.api_key'))
@@ -162,6 +162,8 @@ class OpenRouterReceiptScanner
             'warnings' => $warnings,
             'departureLocation' => $this->stringValue($result['departureLocation'] ?? ''),
             'destinationLocation' => $this->stringValue($result['destinationLocation'] ?? ''),
+            'departureCountry' => $this->stringValue($result['departureCountry'] ?? ''),
+            'destinationCountry' => $this->stringValue($result['destinationCountry'] ?? ''),
         ];
     }
 
@@ -182,7 +184,7 @@ class OpenRouterReceiptScanner
         return [
             'type' => 'object',
             'additionalProperties' => false,
-            'required' => ['vendor', 'date', 'receiptNumber', 'category', 'currency', 'subtotal', 'vat', 'total', 'totalInEur', 'paymentMethod', 'description', 'items', 'confidence', 'warnings', 'departureLocation', 'destinationLocation'],
+            'required' => ['vendor', 'date', 'receiptNumber', 'category', 'currency', 'subtotal', 'vat', 'total', 'totalInEur', 'paymentMethod', 'description', 'items', 'confidence', 'warnings', 'departureLocation', 'destinationLocation', 'departureCountry', 'destinationCountry'],
             'properties' => [
                 'vendor' => ['type' => 'string'],
                 'date' => ['type' => 'string'],
@@ -214,6 +216,8 @@ class OpenRouterReceiptScanner
                 'warnings' => ['type' => 'array', 'items' => ['type' => 'string']],
                 'departureLocation' => ['type' => 'string'],
                 'destinationLocation' => ['type' => 'string'],
+                'departureCountry' => ['type' => 'string'],
+                'destinationCountry' => ['type' => 'string'],
             ],
         ];
     }
