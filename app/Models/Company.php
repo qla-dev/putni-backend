@@ -18,7 +18,6 @@ class Company extends Model
         'country',
         'email',
         'phone',
-        'iban',
         'invite_code',
         'team_enabled',
         'share_ai_tokens',

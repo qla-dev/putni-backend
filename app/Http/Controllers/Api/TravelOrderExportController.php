@@ -30,8 +30,9 @@ class TravelOrderExportController extends Controller
             ->firstOrFail();
         $currency = $request->validate([
             'currency' => ['sometimes', 'in:EUR,BAM'],
+            'includeImages' => ['sometimes', 'boolean'],
         ])['currency'] ?? 'EUR';
-        $export = $exporter->generate($order, $exportFormat, $currency);
+        $export = $exporter->generate($order, $exportFormat, $currency, $request->boolean('includeImages'));
 
         return response($export['content'], 200, [
             'Content-Type' => $export['mime_type'],

@@ -12,7 +12,7 @@ class TravelOrderExportService
 {
     private const BAM_RATE = 1.95583;
 
-    public function generate(TravelOrder $order, ExportFormat $format, string $currency = 'EUR'): array
+    public function generate(TravelOrder $order, ExportFormat $format, string $currency = 'EUR', bool $includeImages = false): array
     {
         $content = match ($format->handler) {
             'pdf' => $this->pdf($order, $currency),
@@ -25,11 +25,37 @@ class TravelOrderExportService
             default => throw new RuntimeException("Unknown export handler [{$format->handler}]."),
         };
 
-        return [
+        $export = [
             'content' => $content,
             'filename' => $this->filename($format, $order),
             'mime_type' => $format->mime_type,
         ];
+        return $includeImages ? $this->withImages($order, $export) : $export;
+    }
+
+    private function withImages(TravelOrder $order, array $export): array
+    {
+        $path = tempnam(sys_get_temp_dir(), 'putni_export_');
+        throw_unless($path !== false, new RuntimeException('ZIP export could not be prepared.'));
+        $zip = new ZipArchive;
+        throw_unless($zip->open($path, ZipArchive::OVERWRITE) === true, new RuntimeException('ZIP export could not be created.'));
+        $zip->addFromString($export['filename'], $export['content']);
+        foreach ((array) $order->expenses as $index => $expense) {
+            $data = is_array($expense) ? (string) ($expense['imageData'] ?? '') : '';
+            if ($data === '') continue;
+            if (str_starts_with($data, 'data:')) $data = (string) (explode(',', $data, 2)[1] ?? '');
+            $binary = base64_decode($data, true);
+            if ($binary === false) continue;
+            $mime = is_array($expense) ? (string) ($expense['imageMimeType'] ?? 'image/jpeg') : 'image/jpeg';
+            $extension = match ($mime) { 'image/png' => 'png', 'image/webp' => 'webp', default => 'jpg' };
+            $label = preg_replace('/[^\pL\pN_.-]+/u', '_', (string) ($expense['vendor'] ?? $expense['category'] ?? 'racun'));
+            $zip->addFromString('galerija/'.str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT)."_{$label}.{$extension}", $binary);
+        }
+        $zip->close();
+        $content = file_get_contents($path);
+        @unlink($path);
+        throw_unless(is_string($content), new RuntimeException('ZIP export could not be read.'));
+        return ['content' => $content, 'filename' => preg_replace('/\.[^.]+$/', '', $export['filename']).'.zip', 'mime_type' => 'application/zip'];
     }
 
     private function filename(ExportFormat $format, TravelOrder $order): string
