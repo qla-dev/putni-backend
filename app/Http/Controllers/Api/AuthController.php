@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -50,10 +51,16 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'jobTitle' => ['sometimes', 'string', 'max:255'],
+            'name' => ['sometimes', 'string', 'max:255'],
+            'email' => ['sometimes', 'email', 'max:255', Rule::unique('users', 'email')->ignore($request->user()->id)],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'oib' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'iban' => ['sometimes', 'nullable', 'string', 'max:50'],
         ]);
-        if (isset($validated['jobTitle'])) {
-            $request->user()->update(['job_title' => trim($validated['jobTitle'])]);
-        }
+        $updates = [];
+        if (isset($validated['jobTitle'])) $updates['job_title'] = trim($validated['jobTitle']);
+        foreach (['name', 'email', 'phone', 'oib', 'iban'] as $field) if (array_key_exists($field, $validated)) $updates[$field] = trim((string) ($validated[$field] ?? ''));
+        if ($updates) $request->user()->update($updates);
 
         return response()->json(['user' => new UserResource($request->user()->refresh())]);
     }

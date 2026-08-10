@@ -12,6 +12,13 @@ class Company extends Model
     protected $fillable = [
         'owner_id',
         'name',
+        'oib',
+        'address',
+        'city',
+        'country',
+        'email',
+        'phone',
+        'iban',
         'invite_code',
         'team_enabled',
         'share_ai_tokens',

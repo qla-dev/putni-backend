@@ -50,6 +50,13 @@ class CompanyController extends Controller
     {
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
+            'oib' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'address' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'city' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'country' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'email' => ['sometimes', 'nullable', 'string', 'email', 'max:255'],
+            'phone' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'iban' => ['sometimes', 'nullable', 'string', 'max:50'],
             'teamEnabled' => ['sometimes', 'boolean'],
             'shareAiTokens' => ['sometimes', 'boolean'],
             'shareVehicles' => ['sometimes', 'boolean'],
@@ -59,10 +66,17 @@ class CompanyController extends Controller
 
         $company->update(array_filter([
             'name' => isset($validated['name']) ? trim($validated['name']) : null,
+            'oib' => array_key_exists('oib', $validated) ? trim((string) $validated['oib']) : null,
+            'address' => array_key_exists('address', $validated) ? trim((string) $validated['address']) : null,
+            'city' => array_key_exists('city', $validated) ? trim((string) $validated['city']) : null,
+            'country' => array_key_exists('country', $validated) ? trim((string) $validated['country']) : null,
+            'email' => array_key_exists('email', $validated) ? trim((string) $validated['email']) : null,
+            'phone' => array_key_exists('phone', $validated) ? trim((string) $validated['phone']) : null,
+            'iban' => array_key_exists('iban', $validated) ? trim((string) $validated['iban']) : null,
             'team_enabled' => $validated['teamEnabled'] ?? null,
             'share_ai_tokens' => $validated['shareAiTokens'] ?? null,
             'share_vehicles' => $validated['shareVehicles'] ?? null,
-        ], fn ($value) => $value !== null && $value !== ''));
+        ], fn ($value) => $value !== null));
 
         if (! $company->team_enabled && ($company->share_ai_tokens || $company->share_vehicles)) {
             $company->update(['share_ai_tokens' => false, 'share_vehicles' => false]);
@@ -150,6 +164,13 @@ class CompanyController extends Controller
         return [
             'id' => $company->id,
             'name' => $company->name,
+            'oib' => $company->oib ?? '',
+            'address' => $company->address ?? '',
+            'city' => $company->city ?? '',
+            'country' => $company->country ?? '',
+            'email' => $company->email ?? '',
+            'phone' => $company->phone ?? '',
+            'iban' => $company->iban ?? '',
             'inviteCode' => $company->invite_code,
             'teamEnabled' => $company->team_enabled,
             'shareAiTokens' => $company->share_ai_tokens,
