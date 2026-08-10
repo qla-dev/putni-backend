@@ -71,9 +71,11 @@ class TravelOrderController extends Controller
             'orderNumber' => [$required, 'string', 'max:100'],
             'status' => [$required, Rule::in(['nacrt', 'poslano', 'odobreno', 'odbijeno', 'isplaceno'])],
             'employeeName' => [$required, 'string', 'max:255'],
-            'employeeTitle' => [$required, 'string', 'max:255'],
-            'employeeOib' => [$required, 'string', 'max:50'],
-            'employeeIban' => [$required, 'string', 'max:50'],
+            // Profile details are snapshots, not prerequisites for creating a draft.
+            // Older app versions may omit them and empty inputs arrive as null.
+            'employeeTitle' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'employeeOib' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'employeeIban' => ['sometimes', 'nullable', 'string', 'max:50'],
             // A draft order may be created before company details are filled in.
             // Export is gated in the app until those details are complete.
             'companyName' => [$partial ? 'sometimes' : 'present', 'nullable', 'string', 'max:255'],
@@ -97,11 +99,13 @@ class TravelOrderController extends Controller
             'bmb95Price' => ['sometimes', 'numeric', 'min:0'],
             'dailyAllowanceRateEur' => [$required, 'numeric', 'min:0'],
             'totalAllowanceCost' => [$required, 'numeric', 'min:0'],
-            'breakfastIncluded' => [$required, 'boolean'],
-            'lunchIncluded' => [$required, 'boolean'],
-            'dinnerIncluded' => [$required, 'boolean'],
-            'hotelIncluded' => [$required, 'boolean'],
-            'residenceDistanceKm' => [$required, 'numeric', 'min:0'],
+            // These fields were added after the first mobile release, so creation
+            // must remain compatible with clients that do not send them.
+            'breakfastIncluded' => ['sometimes', 'nullable', 'boolean'],
+            'lunchIncluded' => ['sometimes', 'nullable', 'boolean'],
+            'dinnerIncluded' => ['sometimes', 'nullable', 'boolean'],
+            'hotelIncluded' => ['sometimes', 'nullable', 'boolean'],
+            'residenceDistanceKm' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'expenses' => [$partial ? 'sometimes' : 'present', 'array'],
             'expenses.*.id' => ['required', 'string', 'max:100'],
             'expenses.*.category' => ['required', 'string', 'max:100'],

@@ -55,6 +55,38 @@ class TravelOrderCrudTest extends TestCase
         $this->assertSame(0, $user->refresh()->ai_order_credits);
     }
 
+    public function test_optional_profile_and_inclusion_fields_may_be_omitted_or_null(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test')->plainTextToken;
+        $payload = $this->payload();
+
+        unset(
+            $payload['employeeTitle'],
+            $payload['employeeOib'],
+            $payload['employeeIban'],
+            $payload['lunchIncluded'],
+            $payload['dinnerIncluded'],
+            $payload['hotelIncluded'],
+            $payload['residenceDistanceKm'],
+        );
+        $payload['breakfastIncluded'] = null;
+
+        $this->withToken($token)
+            ->postJson('/api/travel-orders', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.order.employeeTitle', null)
+            ->assertJsonPath('data.order.breakfastIncluded', null);
+
+        $this->assertDatabaseHas('travel_orders', [
+            'client_id' => 'order-client-1',
+            'employee_title' => null,
+            'employee_oib' => null,
+            'employee_iban' => null,
+            'breakfast_included' => null,
+        ]);
+    }
+
     public function test_user_cannot_change_another_users_order(): void
     {
         $owner = User::factory()->create();
