@@ -9,6 +9,25 @@ class TravelOrderResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $expenses = collect($this->expenses ?? [])->map(function (array $expense): array {
+            if (! empty($expense['items'])) {
+                return $expense;
+            }
+
+            // Tickets can be attached before a price is known, so the scanner may
+            // legitimately return no line items. The receipt editor edits line
+            // items, therefore expose a single editable item for these expenses.
+            $amount = (float) ($expense['originalAmount'] ?? $expense['amountInEur'] ?? 0);
+            $expense['items'] = [[
+                'name' => ($expense['description'] ?? '') ?: ($expense['category'] ?? 'Trošak'),
+                'quantity' => 1,
+                'unitPrice' => $amount,
+                'total' => $amount,
+            ]];
+
+            return $expense;
+        })->values()->all();
+
         return [
             'id' => $this->client_id,
             'orderNumber' => $this->order_number,
@@ -42,7 +61,7 @@ class TravelOrderResource extends JsonResource
             'dinnerIncluded' => $this->dinner_included,
             'hotelIncluded' => $this->hotel_included,
             'residenceDistanceKm' => $this->residence_distance_km,
-            'expenses' => $this->expenses ?? [],
+            'expenses' => $expenses,
             'totalExpensesCost' => $this->total_expenses_cost,
             'advancementPaid' => $this->advancement_paid,
             'grandTotal' => $this->grand_total,

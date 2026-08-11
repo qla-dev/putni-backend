@@ -104,6 +104,38 @@ class TravelOrderCrudTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_expense_without_scanned_items_is_returned_with_an_editable_item(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test')->plainTextToken;
+        $payload = $this->payload();
+        $payload['expenses'] = [[
+            'id' => 'ticket-1',
+            'category' => 'Avionska karta',
+            'description' => 'Avionska karta',
+            'vendor' => null,
+            'receiptNumber' => null,
+            'date' => '2026-07-20',
+            'amountInEur' => 0,
+            'originalAmount' => 0,
+            'paymentMethod' => 'Nije prepoznato',
+            'currency' => 'EUR',
+        ]];
+
+        $this->withToken($token)
+            ->postJson('/api/travel-orders', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.order.expenses.0.items.0.name', 'Avionska karta')
+            ->assertJsonPath('data.order.expenses.0.items.0.quantity', 1)
+            ->assertJsonPath('data.order.expenses.0.items.0.unitPrice', 0)
+            ->assertJsonPath('data.order.expenses.0.items.0.total', 0);
+
+        $this->withToken($token)
+            ->getJson('/api/travel-orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.expenses.0.items.0.name', 'Avionska karta');
+    }
+
     private function payload(): array
     {
         return [
