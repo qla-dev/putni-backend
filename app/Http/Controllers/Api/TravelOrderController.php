@@ -173,6 +173,12 @@ class TravelOrderController extends Controller
         if (array_key_exists('companyOib', $data)) {
             $data['companyOib'] ??= '';
         }
+        if (array_key_exists('expenses', $data)) {
+            $data['expenses'] = array_map(
+                fn (array $expense): array => $this->ensureTicketHasItem($expense),
+                $data['expenses'],
+            );
+        }
 
         $map = [
             'id' => 'client_id',
@@ -267,5 +273,24 @@ class TravelOrderController extends Controller
                     ->all(),
             ];
         })->values()->all();
+    }
+
+    private function ensureTicketHasItem(array $expense): array
+    {
+        $ticketCategories = ['Avionska karta', 'Autobuska karta', 'Vozna karta', 'Prijevozna karta'];
+        if (! in_array($expense['category'] ?? null, $ticketCategories, true) || ! empty($expense['items'])) {
+            return $expense;
+        }
+
+        $amount = (float) ($expense['originalAmount'] ?? $expense['amountInEur'] ?? 0);
+        $expense['items'] = [[
+            'name' => ($expense['description'] ?? '') ?: $expense['category'],
+            'quantity' => 1,
+            'unitPrice' => $amount,
+            'total' => $amount,
+            'vatRate' => 0,
+        ]];
+
+        return $expense;
     }
 }

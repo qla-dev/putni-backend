@@ -42,8 +42,7 @@ class ReceiptScanTest extends TestCase
             ->assertJsonPath('data.vendor', 'Test trgovina')
             ->assertJsonPath('data.total', 12.5);
 
-        Http::assertSent(fn ($request) =>
-            $request->url() === 'https://openrouter.test/chat/completions'
+        Http::assertSent(fn ($request) => $request->url() === 'https://openrouter.test/chat/completions'
             && $request->hasHeader('Authorization', 'Bearer server-secret')
             && $request['model'] === 'test-model'
         );
@@ -121,10 +120,13 @@ class ReceiptScanTest extends TestCase
             ->assertJsonPath('data.description', 'Avionska karta')
             ->assertJsonPath('data.departureLocation', 'Sarajevo')
             ->assertJsonPath('data.destinationLocation', 'Berlin')
-            ->assertJsonPath('data.total', 0);
+            ->assertJsonPath('data.total', 0)
+            ->assertJsonPath('data.items.0.name', 'Avionska karta')
+            ->assertJsonPath('data.items.0.quantity', 1)
+            ->assertJsonPath('data.items.0.unitPrice', 0)
+            ->assertJsonPath('data.items.0.total', 0);
 
-        Http::assertSent(fn ($request) =>
-            data_get($request->data(), 'response_format.json_schema.name') === 'putni_nalozi_air_ticket'
+        Http::assertSent(fn ($request) => data_get($request->data(), 'response_format.json_schema.name') === 'putni_nalozi_air_ticket'
             && str_contains((string) data_get($request->data(), 'messages.0.content'), 'departureLocation')
             && str_contains((string) data_get($request->data(), 'messages.1.content.0.text'), 'Najvažnija polja')
         );

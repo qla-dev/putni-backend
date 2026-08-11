@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\TravelOrder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -129,6 +130,10 @@ class TravelOrderCrudTest extends TestCase
             ->assertJsonPath('data.order.expenses.0.items.0.quantity', 1)
             ->assertJsonPath('data.order.expenses.0.items.0.unitPrice', 0)
             ->assertJsonPath('data.order.expenses.0.items.0.total', 0);
+
+        $storedTicket = TravelOrder::query()->where('client_id', 'order-client-1')->firstOrFail()->expenses[0];
+        $this->assertSame('Avionska karta', $storedTicket['items'][0]['name']);
+        $this->assertSame(0, $storedTicket['items'][0]['unitPrice']);
 
         $this->withToken($token)
             ->getJson('/api/travel-orders')
