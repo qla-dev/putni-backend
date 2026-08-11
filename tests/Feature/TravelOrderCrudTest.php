@@ -134,6 +134,21 @@ class TravelOrderCrudTest extends TestCase
             ->getJson('/api/travel-orders')
             ->assertOk()
             ->assertJsonPath('data.0.expenses.0.items.0.name', 'Avionska karta');
+
+        $payload['expenses'][0]['amountInEur'] = 149.90;
+        $payload['expenses'][0]['originalAmount'] = 149.90;
+        $payload['expenses'][0]['items'] = [[
+            'name' => 'Avionska karta',
+            'quantity' => 1,
+            'unitPrice' => 149.90,
+            'total' => 149.90,
+        ]];
+
+        $this->withToken($token)
+            ->patchJson('/api/travel-orders/order-client-1', ['expenses' => $payload['expenses']])
+            ->assertOk()
+            ->assertJsonPath('data.expenses.0.amountInEur', 149.90)
+            ->assertJsonPath('data.expenses.0.items.0.unitPrice', 149.90);
     }
 
     private function payload(): array

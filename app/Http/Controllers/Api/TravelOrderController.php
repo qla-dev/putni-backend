@@ -8,6 +8,8 @@ use App\Models\TravelOrder;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class TravelOrderController extends Controller
@@ -48,9 +50,32 @@ class TravelOrderController extends Controller
         $order = $request->user()->travelOrders()
             ->where('client_id', $travelOrder)
             ->firstOrFail();
-        $order->update($this->validated($request, true, $order));
 
-        return new TravelOrderResource($order->refresh());
+        $expenseTraceId = (string) Str::uuid();
+        if ($request->has('expenses')) {
+            Log::info('Travel order expense update received', [
+                'trace_id' => $expenseTraceId,
+                'user_id' => $request->user()->id,
+                'travel_order_id' => $travelOrder,
+                'stored_before' => $this->expenseLogSummary($order->expenses),
+                'incoming' => $this->expenseLogSummary($request->input('expenses')),
+            ]);
+        }
+
+        $data = $this->validated($request, true, $order);
+        $order->update($data);
+        $order->refresh();
+
+        if (array_key_exists('expenses', $data)) {
+            Log::info('Travel order expense update persisted', [
+                'trace_id' => $expenseTraceId,
+                'user_id' => $request->user()->id,
+                'travel_order_id' => $travelOrder,
+                'stored_after' => $this->expenseLogSummary($order->expenses),
+            ]);
+        }
+
+        return new TravelOrderResource($order);
     }
 
     public function destroy(Request $request, string $travelOrder)
@@ -206,5 +231,37 @@ class TravelOrderController extends Controller
         }
 
         return $data;
+    }
+
+    private function expenseLogSummary(mixed $expenses): array
+    {
+        if (! is_array($expenses)) {
+            return [];
+        }
+
+        return collect($expenses)->map(function (mixed $expense): array {
+            if (! is_array($expense)) {
+                return ['invalid_expense' => get_debug_type($expense)];
+            }
+
+            return [
+                'id' => $expense['id'] ?? null,
+                'category' => $expense['category'] ?? null,
+                'amountInEur' => $expense['amountInEur'] ?? null,
+                'originalAmount' => $expense['originalAmount'] ?? null,
+                'currency' => $expense['currency'] ?? null,
+                'subtotal' => $expense['subtotal'] ?? null,
+                'vat' => $expense['vat'] ?? null,
+                'items' => collect(is_array($expense['items'] ?? null) ? $expense['items'] : [])
+                    ->map(fn (mixed $item): array => is_array($item) ? [
+                        'name' => $item['name'] ?? null,
+                        'quantity' => $item['quantity'] ?? null,
+                        'unitPrice' => $item['unitPrice'] ?? null,
+                        'total' => $item['total'] ?? null,
+                    ] : ['invalid_item' => get_debug_type($item)])
+                    ->values()
+                    ->all(),
+            ];
+        })->values()->all();
     }
 }
