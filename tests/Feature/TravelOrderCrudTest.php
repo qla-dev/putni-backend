@@ -56,6 +56,43 @@ class TravelOrderCrudTest extends TestCase
         $this->assertSame(0, $user->refresh()->ai_order_credits);
     }
 
+    public function test_user_can_filter_and_paginate_orders_by_status(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test')->plainTextToken;
+
+        $this->withToken($token)->postJson('/api/travel-orders', $this->payload())->assertCreated();
+        $template = TravelOrder::query()->firstOrFail();
+
+        foreach (range(2, 7) as $index) {
+            $order = $template->replicate();
+            $order->client_id = "order-client-{$index}";
+            $order->order_number = "PN-2026-00{$index}";
+            $order->save();
+        }
+
+        foreach (range(8, 9) as $index) {
+            $order = $template->replicate();
+            $order->client_id = "order-client-{$index}";
+            $order->order_number = "PN-2026-00{$index}";
+            $order->status = 'poslano';
+            $order->save();
+        }
+
+        $response = $this->withToken($token)
+            ->getJson('/api/travel-orders?status=nacrt&limit=3&page=2')
+            ->assertOk()
+            ->assertJsonCount(3, 'data')
+            ->assertJsonPath('meta.current_page', 2)
+            ->assertJsonPath('meta.last_page', 3);
+
+        $this->assertSame(['nacrt'], array_values(array_unique($response->json('data.*.status'))));
+
+        $this->withToken($token)
+            ->getJson('/api/travel-orders?status=unknown')
+            ->assertUnprocessable();
+    }
+
     public function test_optional_profile_and_inclusion_fields_may_be_omitted_or_null(): void
     {
         $user = User::factory()->create();

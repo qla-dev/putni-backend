@@ -17,9 +17,17 @@ class TravelOrderController extends Controller
     public function index(Request $request)
     {
         $limit = min(max((int) $request->integer('limit', 10), 1), 50);
+        $validated = $request->validate([
+            'status' => ['nullable', Rule::in(['nacrt', 'poslano', 'odobreno', 'odbijeno', 'isplaceno'])],
+        ]);
+        $query = $request->user()->travelOrders()->latest();
+
+        if ($status = $validated['status'] ?? null) {
+            $query->where('status', $status);
+        }
 
         return TravelOrderResource::collection(
-            $request->user()->travelOrders()->latest()->paginate($limit)
+            $query->paginate($limit)->withQueryString()
         );
     }
 
