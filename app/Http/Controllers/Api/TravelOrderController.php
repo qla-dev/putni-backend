@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TravelOrderResource;
+use App\Http\Resources\TravelOrderSummaryResource;
 use App\Models\TravelOrder;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -20,15 +21,43 @@ class TravelOrderController extends Controller
         $validated = $request->validate([
             'status' => ['nullable', Rule::in(['nacrt', 'poslano', 'odobreno', 'odbijeno', 'isplaceno'])],
         ]);
-        $query = $request->user()->travelOrders()->latest();
+        $expenseCountSql = match (DB::connection()->getDriverName()) {
+            'pgsql' => 'jsonb_array_length(expenses::jsonb)',
+            'sqlite' => 'json_array_length(expenses)',
+            default => 'JSON_LENGTH(expenses)',
+        };
+        $query = $request->user()->travelOrders()
+            ->select([
+                'client_id',
+                'order_number',
+                'status',
+                'created_at',
+                'employee_name',
+                'route',
+                'purpose',
+                'departure_time',
+                'total_hours',
+                'balance_to_pay',
+            ])
+            ->selectRaw("COALESCE({$expenseCountSql}, 0) as receipt_count")
+            ->latest();
 
         if ($status = $validated['status'] ?? null) {
             $query->where('status', $status);
         }
 
-        return TravelOrderResource::collection(
+        return TravelOrderSummaryResource::collection(
             $query->paginate($limit)->withQueryString()
         );
+    }
+
+    public function show(Request $request, string $travelOrder)
+    {
+        $order = $request->user()->travelOrders()
+            ->where('client_id', $travelOrder)
+            ->firstOrFail();
+
+        return new TravelOrderResource($order);
     }
 
     public function store(Request $request)

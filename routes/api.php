@@ -54,5 +54,5 @@ Route::middleware(['auth:sanctum', 'putni.user'])->group(function () {
     Route::get('exports', [TravelOrderExportController::class, 'index']);
     Route::get('travel-orders/{travelOrder}/exports/{exportFormat:name}', [TravelOrderExportController::class, 'show']);
     Route::apiResource('travel-orders', TravelOrderController::class)
-        ->only(['index', 'store', 'update', 'destroy']);
+        ->only(['index', 'show', 'store', 'update', 'destroy']);
 });
