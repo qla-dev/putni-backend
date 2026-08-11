@@ -167,8 +167,12 @@ class TravelOrderController extends Controller
 
         // Laravel converts empty strings to null; keep database values as empty
         // strings while company details are intentionally unfinished.
-        if (array_key_exists('companyName', $data)) $data['companyName'] ??= '';
-        if (array_key_exists('companyOib', $data)) $data['companyOib'] ??= '';
+        if (array_key_exists('companyName', $data)) {
+            $data['companyName'] ??= '';
+        }
+        if (array_key_exists('companyOib', $data)) {
+            $data['companyOib'] ??= '';
+        }
 
         $map = [
             'id' => 'client_id',
