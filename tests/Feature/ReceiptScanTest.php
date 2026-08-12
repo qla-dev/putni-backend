@@ -136,6 +136,37 @@ class ReceiptScanTest extends TestCase
         );
     }
 
+    public function test_bam_receipt_uses_deterministic_conversion_instead_of_ai_value(): void
+    {
+        config([
+            'services.openrouter.api_key' => 'server-secret',
+            'services.openrouter.model' => 'test-model',
+            'services.openrouter.url' => 'https://openrouter.test/chat/completions',
+        ]);
+        Http::fake([
+            'openrouter.test/*' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => json_encode(array_merge($this->scanResult(), [
+                        'currency' => 'BAM',
+                        'total' => 1440.30,
+                        'totalInEur' => 736.50,
+                    ]))],
+                ]],
+            ]),
+        ]);
+        Sanctum::actingAs(User::factory()->create());
+
+        $response = $this->postJson('/api/receipt-scans', [
+            'images' => [['base64' => 'abc', 'mimeType' => 'image/jpeg']],
+        ])->assertOk();
+
+        $this->assertEqualsWithDelta(
+            1440.30 / 1.95583,
+            (float) $response->json('data.totalInEur'),
+            0.000001,
+        );
+    }
+
     private function scanResult(): array
     {
         return [

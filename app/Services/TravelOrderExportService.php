@@ -12,7 +12,7 @@ class TravelOrderExportService
 {
     private const BAM_RATE = 1.95583;
 
-    public function generate(TravelOrder $order, ExportFormat $format, string $currency = 'EUR', bool $includeImages = false): array
+    public function generate(TravelOrder $order, ExportFormat $format, string $currency = 'BAM', bool $includeImages = false): array
     {
         $content = match ($format->handler) {
             'pdf' => $this->pdf($order, $currency),

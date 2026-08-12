@@ -31,7 +31,7 @@ class TravelOrderExportController extends Controller
         $currency = $request->validate([
             'currency' => ['sometimes', 'in:EUR,BAM'],
             'includeImages' => ['sometimes', 'boolean'],
-        ])['currency'] ?? 'EUR';
+        ])['currency'] ?? 'BAM';
         $export = $exporter->generate($order, $exportFormat, $currency, $request->boolean('includeImages'));
 
         return response($export['content'], 200, [

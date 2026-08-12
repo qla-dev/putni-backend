@@ -10,6 +10,8 @@ use RuntimeException;
 
 class OpenRouterReceiptScanner
 {
+    private const BAM_PER_EUR = 1.95583;
+
     public function scan(array $images, string $documentType = 'receipt'): array
     {
         $isAirTicket = $documentType === 'air-ticket';
@@ -121,9 +123,16 @@ class OpenRouterReceiptScanner
         }
 
         $total = $this->numericValue($result['total'] ?? 0);
-        $totalInEur = is_numeric($result['totalInEur'] ?? null)
-            ? $this->numericValue($result['totalInEur'])
-            : ($currency === 'EUR' ? $total : 0.0);
+        // OCR is responsible for reading the printed amount and currency, but
+        // currency conversion must be deterministic. Never trust the model's
+        // converted value for BAM receipts.
+        $totalInEur = match ($currency) {
+            'BAM' => $total / self::BAM_PER_EUR,
+            'EUR' => $total,
+            default => is_numeric($result['totalInEur'] ?? null)
+                ? $this->numericValue($result['totalInEur'])
+                : 0.0,
+        };
 
         $items = [];
         foreach ((is_array($result['items'] ?? null) ? $result['items'] : []) as $item) {
