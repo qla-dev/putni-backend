@@ -316,6 +316,7 @@ class TravelOrderCrudTest extends TestCase
             ->assertJsonPath('data.expenseId', 'receipt-1')
             ->assertJsonPath('data.imageMimeType', 'image/jpeg')
             ->assertJsonMissingPath('data.imageData');
+        $this->assertStringStartsWith('/uploads/receipts/', $response->json('data.imageUri'));
         $path = parse_url($response->json('data.imageUri'), PHP_URL_PATH);
         $absolutePath = public_path(ltrim((string) $path, '/'));
         $this->assertFileExists($absolutePath);

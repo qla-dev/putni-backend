@@ -449,11 +449,6 @@ class TravelOrderController extends Controller
 
     private function serializeReceiptImage(array $image): array
     {
-        $uri = $image['imageUri'] ?? null;
-        if (is_string($uri) && str_starts_with($uri, '/uploads/receipts/')) {
-            $image['imageUri'] = url($uri);
-        }
-
         return $image;
     }
 
