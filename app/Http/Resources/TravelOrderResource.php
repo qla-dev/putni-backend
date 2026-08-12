@@ -40,6 +40,7 @@ class TravelOrderResource extends JsonResource
             'companyName' => $this->company_name,
             'companyOib' => $this->company_oib,
             'route' => $this->route,
+            'isRoundTrip' => $this->is_round_trip,
             'startLocation' => $this->start_location,
             'destinationCountry' => $this->destination_country,
             'purpose' => $this->purpose,

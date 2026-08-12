@@ -143,6 +143,7 @@ class TravelOrderController extends Controller
             'companyName' => [$partial ? 'sometimes' : 'present', 'nullable', 'string', 'max:255'],
             'companyOib' => [$partial ? 'sometimes' : 'present', 'nullable', 'string', 'max:50'],
             'route' => [$required, 'string', 'max:1000'],
+            'isRoundTrip' => ['sometimes', 'boolean'],
             'startLocation' => ['sometimes', 'nullable', 'string', 'max:255'],
             'destinationCountry' => [$required, 'string', 'max:255'],
             'purpose' => [$required, 'string', 'max:2000'],
@@ -227,6 +228,7 @@ class TravelOrderController extends Controller
             'companyName' => 'company_name',
             'companyOib' => 'company_oib',
             'startLocation' => 'start_location',
+            'isRoundTrip' => 'is_round_trip',
             'destinationCountry' => 'destination_country',
             'departureTime' => 'departure_time',
             'arrivalTime' => 'arrival_time',
@@ -258,6 +260,10 @@ class TravelOrderController extends Controller
                 $data[$column] = $data[$input];
                 unset($data[$input]);
             }
+        }
+
+        if (! $partial && ! array_key_exists('is_round_trip', $data)) {
+            $data['is_round_trip'] = true;
         }
 
         if ($partial && $existingOrder) {

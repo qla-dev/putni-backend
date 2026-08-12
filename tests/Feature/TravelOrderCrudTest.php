@@ -20,6 +20,7 @@ class TravelOrderCrudTest extends TestCase
             ->postJson('/api/travel-orders', $this->payload())
             ->assertCreated()
             ->assertJsonPath('data.order.id', 'order-client-1')
+            ->assertJsonPath('data.order.isRoundTrip', true)
             ->assertJsonPath('data.remainingAiOrders', 79);
 
         $this->assertSame(79, $user->refresh()->ai_order_credits);
@@ -31,9 +32,10 @@ class TravelOrderCrudTest extends TestCase
             ->assertJsonPath('data.0.orderNumber', 'PN-2026-001');
 
         $this->withToken($token)
-            ->patchJson('/api/travel-orders/order-client-1', ['status' => 'poslano'])
+            ->patchJson('/api/travel-orders/order-client-1', ['status' => 'poslano', 'isRoundTrip' => false])
             ->assertOk()
-            ->assertJsonPath('data.status', 'poslano');
+            ->assertJsonPath('data.status', 'poslano')
+            ->assertJsonPath('data.isRoundTrip', false);
 
         $this->withToken($token)
             ->deleteJson('/api/travel-orders/order-client-1')
@@ -140,6 +142,9 @@ class TravelOrderCrudTest extends TestCase
         $this->withToken($otherToken)
             ->patchJson('/api/travel-orders/order-client-1', ['status' => 'odobreno'])
             ->assertNotFound();
+        $this->withToken($otherToken)
+            ->getJson('/api/travel-orders/order-client-1')
+            ->assertNotFound();
     }
 
     public function test_expense_without_scanned_items_is_returned_with_an_editable_item(): void
@@ -158,6 +163,7 @@ class TravelOrderCrudTest extends TestCase
             'originalAmount' => 0,
             'paymentMethod' => 'Nije prepoznato',
             'currency' => 'EUR',
+            'imageData' => 'base64-receipt-image',
         ]];
 
         $this->withToken($token)
@@ -175,7 +181,15 @@ class TravelOrderCrudTest extends TestCase
         $this->withToken($token)
             ->getJson('/api/travel-orders')
             ->assertOk()
-            ->assertJsonPath('data.0.expenses.0.items.0.name', 'Avionska karta');
+            ->assertJsonPath('data.0.receiptCount', 1)
+            ->assertJsonMissingPath('data.0.expenses')
+            ->assertJsonMissingPath('data.0.imageData');
+
+        $this->withToken($token)
+            ->getJson('/api/travel-orders/order-client-1')
+            ->assertOk()
+            ->assertJsonPath('data.expenses.0.items.0.name', 'Avionska karta')
+            ->assertJsonPath('data.expenses.0.imageData', 'base64-receipt-image');
 
         $payload['expenses'][0]['amountInEur'] = 149.90;
         $payload['expenses'][0]['originalAmount'] = 149.90;
