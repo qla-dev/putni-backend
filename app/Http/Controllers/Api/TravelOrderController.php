@@ -92,6 +92,10 @@ class TravelOrderController extends Controller
         $images = collect($order->receipt_images ?? [])
             ->reject(fn (mixed $image): bool => is_array($image) && ($image['id'] ?? null) === $validated['id'])
             ->values();
+        $existingImage = collect($order->receipt_images ?? [])->first(
+            fn (mixed $image): bool => is_array($image) && ($image['id'] ?? null) === $validated['id']
+        );
+        if (is_array($existingImage)) $this->deleteStoredReceiptImage($existingImage['imageUri'] ?? null);
         $image = [
             'id' => $validated['id'],
             'expenseId' => $validated['expenseId'],
@@ -209,6 +213,9 @@ class TravelOrderController extends Controller
         $order = $request->user()->travelOrders()
             ->where('client_id', $travelOrder)
             ->firstOrFail();
+        foreach ($order->receipt_images ?? [] as $image) {
+            if (is_array($image)) $this->deleteStoredReceiptImage($image['imageUri'] ?? null);
+        }
         $order->delete();
 
         return response()->noContent();

@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\TravelOrder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
 class TravelOrderCrudTest extends TestCase
@@ -189,7 +191,13 @@ class TravelOrderCrudTest extends TestCase
             ->getJson('/api/travel-orders/order-client-1')
             ->assertOk()
             ->assertJsonPath('data.expenses.0.items.0.name', 'Avionska karta')
-            ->assertJsonPath('data.expenses.0.imageData', 'base64-receipt-image');
+            ->assertJsonMissingPath('data.expenses.0.imageData')
+            ->assertJsonMissingPath('data.receiptImages');
+
+        $this->withToken($token)
+            ->getJson('/api/travel-orders/order-client-1/receipt-images')
+            ->assertOk()
+            ->assertJsonPath('data.0.imageData', 'base64-receipt-image');
 
         $payload['expenses'][0]['amountInEur'] = 149.90;
         $payload['expenses'][0]['originalAmount'] = 149.90;
@@ -220,9 +228,14 @@ class TravelOrderCrudTest extends TestCase
         $this->withToken($token)
             ->postJson('/api/travel-orders', $payload)
             ->assertCreated()
-            ->assertJsonCount(2, 'data.order.receiptImages')
-            ->assertJsonPath('data.order.receiptImages.0.expenseId', 'receipt-1')
-            ->assertJsonPath('data.order.receiptImages.1.id', 'image-2');
+            ->assertJsonMissingPath('data.order.receiptImages');
+
+        $this->withToken($token)
+            ->getJson('/api/travel-orders/order-client-1/receipt-images')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.expenseId', 'receipt-1')
+            ->assertJsonPath('data.1.id', 'image-2');
 
         $this->withToken($token)
             ->getJson('/api/travel-orders')
@@ -263,18 +276,61 @@ class TravelOrderCrudTest extends TestCase
                 ],
             ])
             ->assertOk()
-            ->assertJsonCount(2, 'data.receiptImages')
-            ->assertJsonPath('data.receiptImages.0.id', 'legacy-receipt-1')
-            ->assertJsonPath('data.receiptImages.1.id', 'image-additional');
+            ->assertJsonMissingPath('data.receiptImages');
+
+        $this->withToken($token)
+            ->getJson('/api/travel-orders/order-client-1/receipt-images')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.expenseId', 'receipt-1')
+            ->assertJsonPath('data.1.imageData', 'additional-image');
+
+        $this->assertCount(1, TravelOrder::query()->firstOrFail()->receipt_images);
+    }
+
+    public function test_receipt_image_is_uploaded_compressed_and_loaded_separately(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test')->plainTextToken;
+        $payload = $this->payload();
+        $payload['expenses'] = [[
+            'id' => 'receipt-1',
+            'category' => 'Smještaj',
+            'description' => 'Hotel',
+            'vendor' => 'Hotel',
+            'receiptNumber' => 'H-1',
+            'date' => '2026-07-20',
+            'amountInEur' => 100,
+            'paymentMethod' => 'Kartica',
+        ]];
+        $this->withToken($token)->postJson('/api/travel-orders', $payload)->assertCreated();
+
+        $response = $this->withToken($token)->post('/api/travel-orders/order-client-1/receipt-images', [
+            'id' => 'uploaded-image',
+            'expenseId' => 'receipt-1',
+            'image' => UploadedFile::fake()->image('receipt.png', 2200, 1600),
+        ], ['Accept' => 'application/json']);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.id', 'uploaded-image')
+            ->assertJsonPath('data.expenseId', 'receipt-1')
+            ->assertJsonPath('data.imageMimeType', 'image/jpeg')
+            ->assertJsonMissingPath('data.imageData');
+        $path = parse_url($response->json('data.imageUri'), PHP_URL_PATH);
+        $absolutePath = public_path(ltrim((string) $path, '/'));
+        $this->assertFileExists($absolutePath);
+        $this->assertLessThanOrEqual(350 * 1024, File::size($absolutePath));
 
         $this->withToken($token)
             ->getJson('/api/travel-orders/order-client-1')
             ->assertOk()
-            ->assertJsonCount(2, 'data.receiptImages')
-            ->assertJsonPath('data.receiptImages.0.expenseId', 'receipt-1')
-            ->assertJsonPath('data.receiptImages.1.imageData', 'additional-image');
+            ->assertJsonMissingPath('data.receiptImages');
+        $this->withToken($token)
+            ->getJson('/api/travel-orders/order-client-1/receipt-images')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', 'uploaded-image');
 
-        $this->assertCount(1, TravelOrder::query()->firstOrFail()->receipt_images);
+        File::delete($absolutePath);
     }
 
     private function payload(): array
