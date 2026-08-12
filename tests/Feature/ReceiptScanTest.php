@@ -104,6 +104,8 @@ class ReceiptScanTest extends TestCase
                         'vendor' => '',
                         'departureLocation' => 'Sarajevo',
                         'destinationLocation' => 'Berlin',
+                        'departureDateTime' => '2026-08-20T08:15',
+                        'arrivalDateTime' => '2026-08-20T10:05',
                     ])],
                 ]],
             ]),
@@ -120,6 +122,8 @@ class ReceiptScanTest extends TestCase
             ->assertJsonPath('data.description', 'Avionska karta')
             ->assertJsonPath('data.departureLocation', 'Sarajevo')
             ->assertJsonPath('data.destinationLocation', 'Berlin')
+            ->assertJsonPath('data.departureDateTime', '2026-08-20T08:15')
+            ->assertJsonPath('data.arrivalDateTime', '2026-08-20T10:05')
             ->assertJsonPath('data.total', 0)
             ->assertJsonPath('data.items.0.name', 'Avionska karta')
             ->assertJsonPath('data.items.0.quantity', 1)
@@ -157,6 +161,8 @@ class ReceiptScanTest extends TestCase
             'warnings' => [],
             'departureLocation' => '',
             'destinationLocation' => '',
+            'departureDateTime' => '',
+            'arrivalDateTime' => '',
         ];
     }
 }
