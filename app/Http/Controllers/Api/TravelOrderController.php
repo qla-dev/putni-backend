@@ -22,9 +22,9 @@ class TravelOrderController extends Controller
             'status' => ['nullable', Rule::in(['nacrt', 'poslano', 'odobreno', 'odbijeno', 'isplaceno'])],
         ]);
         $expenseCountSql = match (DB::connection()->getDriverName()) {
-            'pgsql' => 'jsonb_array_length(expenses::jsonb)',
-            'sqlite' => 'json_array_length(expenses)',
-            default => 'JSON_LENGTH(expenses)',
+            'pgsql' => 'COALESCE(jsonb_array_length(receipt_images::jsonb), jsonb_array_length(expenses::jsonb))',
+            'sqlite' => 'COALESCE(json_array_length(receipt_images), json_array_length(expenses))',
+            default => 'COALESCE(JSON_LENGTH(receipt_images), JSON_LENGTH(expenses))',
         };
         $query = $request->user()->travelOrders()
             ->select([
@@ -98,6 +98,14 @@ class TravelOrderController extends Controller
                 'incoming' => $this->expenseLogSummary($request->input('expenses')),
             ]);
         }
+        if ($request->has('receiptImages')) {
+            Log::info('Travel order receipt image update received', [
+                'trace_id' => $expenseTraceId,
+                'travel_order_id' => $travelOrder,
+                'stored_before_count' => count($order->receipt_images ?? []),
+                'incoming_count' => count((array) $request->input('receiptImages')),
+            ]);
+        }
 
         $data = $this->validated($request, true, $order);
         $order->update($data);
@@ -109,6 +117,13 @@ class TravelOrderController extends Controller
                 'user_id' => $request->user()->id,
                 'travel_order_id' => $travelOrder,
                 'stored_after' => $this->expenseLogSummary($order->expenses),
+            ]);
+        }
+        if (array_key_exists('receipt_images', $data)) {
+            Log::info('Travel order receipt image update persisted', [
+                'trace_id' => $expenseTraceId,
+                'travel_order_id' => $travelOrder,
+                'stored_after_count' => count($order->receipt_images ?? []),
             ]);
         }
 

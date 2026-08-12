@@ -224,7 +224,62 @@ class TravelOrderCrudTest extends TestCase
             ->assertJsonPath('data.order.receiptImages.0.expenseId', 'receipt-1')
             ->assertJsonPath('data.order.receiptImages.1.id', 'image-2');
 
+        $this->withToken($token)
+            ->getJson('/api/travel-orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.receiptCount', 2);
+
         $this->assertCount(2, TravelOrder::query()->firstOrFail()->receipt_images);
+    }
+
+    public function test_additional_receipt_image_survives_patch_and_later_fetch(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test')->plainTextToken;
+        $payload = $this->payload();
+        $payload['expenses'] = [[
+            'id' => 'receipt-1',
+            'category' => 'Smještaj',
+            'description' => 'Hotel',
+            'vendor' => 'Hotel',
+            'receiptNumber' => 'H-1',
+            'date' => '2026-07-20',
+            'amountInEur' => 100,
+            'paymentMethod' => 'Kartica',
+            'imageData' => 'main-image',
+            'imageMimeType' => 'image/jpeg',
+        ]];
+        $payload['receiptImages'] = [[
+            'id' => 'image-main',
+            'expenseId' => 'receipt-1',
+            'imageData' => 'main-image',
+            'imageMimeType' => 'image/jpeg',
+        ]];
+
+        $this->withToken($token)->postJson('/api/travel-orders', $payload)->assertCreated();
+
+        $this->withToken($token)
+            ->patchJson('/api/travel-orders/order-client-1', [
+                'receiptImages' => [
+                    ...$payload['receiptImages'],
+                    [
+                        'id' => 'image-additional',
+                        'expenseId' => 'receipt-1',
+                        'imageData' => 'additional-image',
+                        'imageMimeType' => 'image/png',
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonCount(2, 'data.receiptImages')
+            ->assertJsonPath('data.receiptImages.1.id', 'image-additional');
+
+        $this->withToken($token)
+            ->getJson('/api/travel-orders/order-client-1')
+            ->assertOk()
+            ->assertJsonCount(2, 'data.receiptImages')
+            ->assertJsonPath('data.receiptImages.0.expenseId', 'receipt-1')
+            ->assertJsonPath('data.receiptImages.1.imageData', 'additional-image');
     }
 
     private function payload(): array
