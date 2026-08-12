@@ -27,24 +27,11 @@ class TravelOrderResource extends JsonResource
 
             return $expense;
         })->values()->all();
-        $receiptImages = collect($this->receipt_images ?? []);
-        foreach ($expenses as $expense) {
-            if (empty($expense['imageUri']) && empty($expense['imageData'])) continue;
-            $alreadyIncluded = $receiptImages->contains(function (array $image) use ($expense): bool {
-                if (($image['expenseId'] ?? null) !== ($expense['id'] ?? null)) return false;
+        $expenses = collect($expenses)->map(function (array $expense): array {
+            unset($expense['imageUri'], $expense['imageData'], $expense['imageMimeType']);
 
-                return (! empty($expense['imageData']) && ($image['imageData'] ?? null) === $expense['imageData'])
-                    || (! empty($expense['imageUri']) && ($image['imageUri'] ?? null) === $expense['imageUri']);
-            });
-            if ($alreadyIncluded) continue;
-            $receiptImages->prepend([
-                'id' => 'legacy-'.($expense['id'] ?? uniqid()),
-                'expenseId' => $expense['id'],
-                'imageUri' => $expense['imageUri'] ?? null,
-                'imageData' => $expense['imageData'] ?? null,
-                'imageMimeType' => $expense['imageMimeType'] ?? null,
-            ]);
-        }
+            return $expense;
+        })->values()->all();
 
         return [
             'id' => $this->client_id,
@@ -81,7 +68,6 @@ class TravelOrderResource extends JsonResource
             'hotelIncluded' => $this->hotel_included,
             'residenceDistanceKm' => $this->residence_distance_km,
             'expenses' => $expenses,
-            'receiptImages' => $receiptImages->values()->all(),
             'totalExpensesCost' => $this->total_expenses_cost,
             'advancementPaid' => $this->advancement_paid,
             'grandTotal' => $this->grand_total,

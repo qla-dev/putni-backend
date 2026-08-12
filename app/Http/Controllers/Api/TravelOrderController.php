@@ -8,9 +8,12 @@ use App\Http\Resources\TravelOrderSummaryResource;
 use App\Models\TravelOrder;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 
 class TravelOrderController extends Controller
@@ -58,6 +61,77 @@ class TravelOrderController extends Controller
             ->firstOrFail();
 
         return new TravelOrderResource($order);
+    }
+
+    public function receiptImages(Request $request, string $travelOrder)
+    {
+        $order = $request->user()->travelOrders()
+            ->where('client_id', $travelOrder)
+            ->firstOrFail();
+
+        return response()->json(['data' => $this->serializedReceiptImages($order)]);
+    }
+
+    public function storeReceiptImage(Request $request, string $travelOrder)
+    {
+        $order = $request->user()->travelOrders()
+            ->where('client_id', $travelOrder)
+            ->firstOrFail();
+        $validated = $request->validate([
+            'id' => ['required', 'string', 'max:100'],
+            'expenseId' => ['required', 'string', 'max:100'],
+            'image' => ['required', 'file', 'max:20480', $this->uploadedImageRule()],
+        ]);
+        abort_unless(collect($order->expenses ?? [])->contains(
+            fn (mixed $expense): bool => is_array($expense) && ($expense['id'] ?? null) === $validated['expenseId']
+        ), 422, 'Receipt expense does not exist.');
+
+        /** @var UploadedFile $file */
+        $file = $request->file('image');
+        $storedUri = $this->storeUploadedReceiptImage($file);
+        $images = collect($order->receipt_images ?? [])
+            ->reject(fn (mixed $image): bool => is_array($image) && ($image['id'] ?? null) === $validated['id'])
+            ->values();
+        $image = [
+            'id' => $validated['id'],
+            'expenseId' => $validated['expenseId'],
+            'imageUri' => $storedUri,
+            'imageMimeType' => 'image/jpeg',
+        ];
+        $images->push($image);
+        $order->update(['receipt_images' => $images->all()]);
+
+        return response()->json(['data' => $this->serializeReceiptImage($image)], 201);
+    }
+
+    public function destroyReceiptImage(Request $request, string $travelOrder, string $imageId)
+    {
+        $order = $request->user()->travelOrders()
+            ->where('client_id', $travelOrder)
+            ->firstOrFail();
+        $removed = null;
+        $images = collect($order->receipt_images ?? [])->reject(function (mixed $image) use ($imageId, &$removed): bool {
+            $matches = is_array($image) && ($image['id'] ?? null) === $imageId;
+            if ($matches) $removed = $image;
+
+            return $matches;
+        })->values()->all();
+
+        if ($removed) {
+            $this->deleteStoredReceiptImage($removed['imageUri'] ?? null);
+            $order->update(['receipt_images' => $images]);
+        } elseif (str_starts_with($imageId, 'legacy-')) {
+            $expenseId = substr($imageId, strlen('legacy-'));
+            $expenses = collect($order->expenses ?? [])->map(function (mixed $expense) use ($expenseId): mixed {
+                if (! is_array($expense) || ($expense['id'] ?? null) !== $expenseId) return $expense;
+                unset($expense['imageUri'], $expense['imageData'], $expense['imageMimeType']);
+
+                return $expense;
+            })->values()->all();
+            $order->update(['expenses' => $expenses]);
+        }
+
+        return response()->noContent();
     }
 
     public function store(Request $request)
@@ -338,6 +412,112 @@ class TravelOrderController extends Controller
                     ->all(),
             ];
         })->values()->all();
+    }
+
+    private function serializedReceiptImages(TravelOrder $order): array
+    {
+        $images = collect($order->receipt_images ?? []);
+        foreach ($order->expenses ?? [] as $expense) {
+            if (! is_array($expense) || (empty($expense['imageUri']) && empty($expense['imageData']))) continue;
+            $alreadyIncluded = $images->contains(function (mixed $image) use ($expense): bool {
+                if (! is_array($image) || ($image['expenseId'] ?? null) !== ($expense['id'] ?? null)) return false;
+
+                return (! empty($expense['imageData']) && ($image['imageData'] ?? null) === $expense['imageData'])
+                    || (! empty($expense['imageUri']) && ($image['imageUri'] ?? null) === $expense['imageUri']);
+            });
+            if ($alreadyIncluded) continue;
+            $images->prepend([
+                'id' => 'legacy-'.($expense['id'] ?? uniqid()),
+                'expenseId' => $expense['id'] ?? '',
+                'imageUri' => $expense['imageUri'] ?? null,
+                'imageData' => $expense['imageData'] ?? null,
+                'imageMimeType' => $expense['imageMimeType'] ?? null,
+            ]);
+        }
+
+        return $images->map(fn (mixed $image): mixed => is_array($image)
+            ? $this->serializeReceiptImage($image)
+            : $image)->values()->all();
+    }
+
+    private function serializeReceiptImage(array $image): array
+    {
+        $uri = $image['imageUri'] ?? null;
+        if (is_string($uri) && str_starts_with($uri, '/uploads/receipts/')) {
+            $image['imageUri'] = url($uri);
+        }
+
+        return $image;
+    }
+
+    private function storeUploadedReceiptImage(UploadedFile $file): string
+    {
+        $realPath = $file->getRealPath();
+        $source = $realPath ? @imagecreatefromstring(File::get($realPath)) : false;
+        if (! $source) {
+            throw ValidationException::withMessages([
+                'image' => ['Slika nije podržana ili je oštećena. Pošaljite JPEG, PNG ili WebP sliku.'],
+            ]);
+        }
+
+        $sourceWidth = imagesx($source);
+        $sourceHeight = imagesy($source);
+        $encoded = null;
+        foreach ([2000, 1800, 1600, 1400, 1200, 1000, 800, 640, 520, 420, 320] as $maxDimension) {
+            $scale = min(1, $maxDimension / max($sourceWidth, $sourceHeight));
+            $width = max(1, (int) floor($sourceWidth * $scale));
+            $height = max(1, (int) floor($sourceHeight * $scale));
+            $canvas = imagecreatetruecolor($width, $height);
+            imagefill($canvas, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
+            imagecopyresampled($canvas, $source, 0, 0, 0, 0, $width, $height, $sourceWidth, $sourceHeight);
+
+            foreach ([84, 78, 72, 66, 60, 54, 48, 42, 36] as $quality) {
+                ob_start();
+                imagejpeg($canvas, null, $quality);
+                $candidate = ob_get_clean();
+                if (is_string($candidate) && strlen($candidate) <= 350 * 1024) {
+                    $encoded = $candidate;
+                    break;
+                }
+            }
+            imagedestroy($canvas);
+            if ($encoded !== null) break;
+        }
+        imagedestroy($source);
+
+        if ($encoded === null) {
+            throw ValidationException::withMessages(['image' => ['Sliku nije moguće pripremiti za spremanje.']]);
+        }
+
+        $relativeDirectory = 'uploads/receipts/'.now()->format('Y/m');
+        $directory = public_path($relativeDirectory);
+        File::ensureDirectoryExists($directory, 0755, true);
+        $filename = Str::uuid()->toString().'.jpg';
+        File::put($directory.DIRECTORY_SEPARATOR.$filename, $encoded);
+
+        return '/'.$relativeDirectory.'/'.$filename;
+    }
+
+    private function uploadedImageRule(): callable
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            if (! $value instanceof UploadedFile) return;
+            $extension = Str::lower((string) $value->getClientOriginalExtension());
+            $mimeType = Str::lower((string) $value->getMimeType());
+            if (! in_array($extension, ['jpeg', 'jpg', 'png', 'webp'], true)
+                && ! in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+                $fail('Uploadovana datoteka mora biti JPEG, PNG ili WebP slika.');
+            }
+        };
+    }
+
+    private function deleteStoredReceiptImage(?string $imageUri): void
+    {
+        if (! $imageUri) return;
+        $path = parse_url($imageUri, PHP_URL_PATH);
+        if (! $path || ! str_starts_with($path, '/uploads/receipts/')) return;
+        $absolutePath = public_path(ltrim($path, '/'));
+        if (File::exists($absolutePath)) File::delete($absolutePath);
     }
 
     private function ensureTicketHasItem(array $expense): array

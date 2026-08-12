@@ -249,19 +249,11 @@ class TravelOrderCrudTest extends TestCase
             'imageData' => 'main-image',
             'imageMimeType' => 'image/jpeg',
         ]];
-        $payload['receiptImages'] = [[
-            'id' => 'image-main',
-            'expenseId' => 'receipt-1',
-            'imageData' => 'main-image',
-            'imageMimeType' => 'image/jpeg',
-        ]];
-
         $this->withToken($token)->postJson('/api/travel-orders', $payload)->assertCreated();
 
         $this->withToken($token)
             ->patchJson('/api/travel-orders/order-client-1', [
                 'receiptImages' => [
-                    ...$payload['receiptImages'],
                     [
                         'id' => 'image-additional',
                         'expenseId' => 'receipt-1',
@@ -272,6 +264,7 @@ class TravelOrderCrudTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonCount(2, 'data.receiptImages')
+            ->assertJsonPath('data.receiptImages.0.id', 'legacy-receipt-1')
             ->assertJsonPath('data.receiptImages.1.id', 'image-additional');
 
         $this->withToken($token)
@@ -280,6 +273,8 @@ class TravelOrderCrudTest extends TestCase
             ->assertJsonCount(2, 'data.receiptImages')
             ->assertJsonPath('data.receiptImages.0.expenseId', 'receipt-1')
             ->assertJsonPath('data.receiptImages.1.imageData', 'additional-image');
+
+        $this->assertCount(1, TravelOrder::query()->firstOrFail()->receipt_images);
     }
 
     private function payload(): array

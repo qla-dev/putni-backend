@@ -53,6 +53,9 @@ Route::middleware(['auth:sanctum', 'putni.user'])->group(function () {
     Route::delete('company/members/{member}', [CompanyController::class, 'removeMember']);
     Route::get('exports', [TravelOrderExportController::class, 'index']);
     Route::get('travel-orders/{travelOrder}/exports/{exportFormat:name}', [TravelOrderExportController::class, 'show']);
+    Route::get('travel-orders/{travelOrder}/receipt-images', [TravelOrderController::class, 'receiptImages']);
+    Route::post('travel-orders/{travelOrder}/receipt-images', [TravelOrderController::class, 'storeReceiptImage']);
+    Route::delete('travel-orders/{travelOrder}/receipt-images/{imageId}', [TravelOrderController::class, 'destroyReceiptImage']);
     Route::apiResource('travel-orders', TravelOrderController::class)
         ->only(['index', 'show', 'store', 'update', 'destroy']);
 });
