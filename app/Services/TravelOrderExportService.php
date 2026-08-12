@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ExportFormat;
 use App\Models\TravelOrder;
 use DateTimeInterface;
+use Illuminate\Support\Facades\File;
 use RuntimeException;
 use ZipArchive;
 
@@ -40,24 +41,36 @@ class TravelOrderExportService
         $zip = new ZipArchive;
         throw_unless($zip->open($path, ZipArchive::OVERWRITE) === true, new RuntimeException('ZIP export could not be created.'));
         $zip->addFromString($export['filename'], $export['content']);
-        $receiptImages = $order->receipt_images;
-        if ($receiptImages === null) {
-            $receiptImages = collect((array) $order->expenses)->flatMap(fn (array $expense): array =>
-                empty($expense['imageData']) ? [] : [[
+        $receiptImages = collect($order->receipt_images ?? []);
+        foreach ((array) $order->expenses as $expense) {
+            if (! is_array($expense) || (empty($expense['imageData']) && empty($expense['imageUri']))) continue;
+            if ($receiptImages->contains(fn (mixed $image): bool => is_array($image)
+                && ($image['expenseId'] ?? null) === ($expense['id'] ?? null)
+                && ((! empty($expense['imageData']) && ($image['imageData'] ?? null) === $expense['imageData'])
+                    || (! empty($expense['imageUri']) && ($image['imageUri'] ?? null) === $expense['imageUri'])))) continue;
+            $receiptImages->prepend([
                     'id' => 'legacy-'.($expense['id'] ?? ''),
                     'expenseId' => $expense['id'] ?? '',
-                    'imageData' => $expense['imageData'],
+                    'imageData' => $expense['imageData'] ?? null,
+                    'imageUri' => $expense['imageUri'] ?? null,
                     'imageMimeType' => $expense['imageMimeType'] ?? null,
-                ]]
-            )->values()->all();
+                ]);
         }
         $expensesById = collect((array) $order->expenses)->keyBy('id');
-        foreach ((array) $receiptImages as $index => $image) {
+        foreach ($receiptImages->values()->all() as $index => $image) {
             $data = is_array($image) ? (string) ($image['imageData'] ?? '') : '';
-            if ($data === '') continue;
-            if (str_starts_with($data, 'data:')) $data = (string) (explode(',', $data, 2)[1] ?? '');
-            $binary = base64_decode($data, true);
-            if ($binary === false) continue;
+            $binary = null;
+            if ($data !== '') {
+                if (str_starts_with($data, 'data:')) $data = (string) (explode(',', $data, 2)[1] ?? '');
+                $binary = base64_decode($data, true);
+            } elseif (is_array($image)) {
+                $uriPath = parse_url((string) ($image['imageUri'] ?? ''), PHP_URL_PATH);
+                if ($uriPath && str_starts_with($uriPath, '/uploads/receipts/')) {
+                    $absolutePath = public_path(ltrim($uriPath, '/'));
+                    if (File::exists($absolutePath)) $binary = File::get($absolutePath);
+                }
+            }
+            if (! is_string($binary) || $binary === '') continue;
             $mime = is_array($image) ? (string) ($image['imageMimeType'] ?? 'image/jpeg') : 'image/jpeg';
             $extension = match ($mime) { 'image/png' => 'png', 'image/webp' => 'webp', default => 'jpg' };
             $expense = is_array($image) ? $expensesById->get($image['expenseId'] ?? '') : null;
