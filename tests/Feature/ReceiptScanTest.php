@@ -136,6 +136,40 @@ class ReceiptScanTest extends TestCase
         );
     }
 
+    public function test_air_ticket_prompt_requires_any_iata_code_to_be_returned_as_a_city_name(): void
+    {
+        config([
+            'services.openrouter.api_key' => 'server-secret',
+            'services.openrouter.model' => 'test-model',
+            'services.openrouter.url' => 'https://openrouter.test/chat/completions',
+        ]);
+        Http::fake([
+            'openrouter.test/*' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => json_encode(array_merge($this->scanResult(), [
+                        'category' => 'Avionska karta',
+                        'departureLocation' => 'Sarajevo',
+                        'destinationLocation' => 'Berlin',
+                    ]))],
+                ]],
+            ]),
+        ]);
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/receipt-scans', [
+            'images' => [['base64' => 'abc', 'mimeType' => 'image/jpeg']],
+            'documentType' => 'air-ticket',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.departureLocation', 'Sarajevo')
+            ->assertJsonPath('data.destinationLocation', 'Berlin');
+
+        Http::assertSent(fn ($request) => str_contains(
+            (string) data_get($request->data(), 'messages.0.content'),
+            'bilo koji IATA kod',
+        ));
+    }
+
     public function test_bam_receipt_uses_deterministic_conversion_instead_of_ai_value(): void
     {
         config([
