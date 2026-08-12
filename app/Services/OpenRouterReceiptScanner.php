@@ -22,6 +22,11 @@ class OpenRouterReceiptScanner
             ? 'Očitaj polazak, državu polaska, krajnje odredište, državu odredišta, departureDateTime i arrivalDateTime u formatu YYYY-MM-DDTHH:mm, aviokompaniju, datum leta u formatu YYYY-MM-DD, broj karte ili rezervacije, valutu i iznos ako su prikazani. Najvažnija polja su departureLocation, departureCountry, destinationLocation, destinationCountry, departureDateTime i arrivalDateTime.'
             : 'Očitaj trgovca, datum računa ili putovanja u formatu YYYY-MM-DD, broj računa ili karte, kategoriju, valutu kao ISO 4217 kod, osnovicu, porez, ukupan iznos u izvornoj valuti, ukupan iznos preračunat u EUR, način plaćanja i svaki pojedinačni artikal ili uslugu. Porez može biti PDV/VAT, sales tax, GST ili druga vrsta poreza navedena na dokumentu. Ukupan iznos poreza vrati u polju vat, a stopu poreza svake stavke u vatRate, bez obzira na naziv vrste poreza na dokumentu. Ako je karta, očitaj i polazak, državu polaska, odredište, državu odredišta, departureDateTime i arrivalDateTime.';
 
+        if (! $isAirTicket) {
+            $systemPrompt .= ' Postavi category tačno na Rent-a-car kada dokument predstavlja najam vozila, car rental/car hire račun ili ugovor agencije za iznajmljivanje automobila. Ne koristi Rent-a-car samo zato što račun spominje automobil.';
+            $userPrompt .= ' Prepoznaj Rent-a-car kada dokument jasno dokazuje uslugu najma vozila.';
+        }
+
         if ($documentType === 'transport-ticket') {
             $systemPrompt = 'Read a transport ticket for a travel order: plane, bus, or train. Classify only from evidence printed on the ticket. Set category exactly to Autobuska karta for bus, coach, bus station/stop, or a road carrier; set Vozna karta only with explicit rail/train evidence such as train, railway, rail, station/kolodvor, wagon, carriage, or a train number; set Avionska karta only for flight, boarding pass, or airline evidence. Do not classify a bus ticket as Vozna karta merely because it shows a route. Use Prijevozna karta only when no transport type can be identified. Extract the real departure city into departureLocation and final destination city into destinationLocation. When any location is printed as an airport IATA code, identify that airport and return its full city name instead of the code. Also extract their countries into departureCountry and destinationCountry, using standard English country names (for example, Bosnia and Herzegovina, Croatia). Extract departureDateTime and arrivalDateTime as YYYY-MM-DDTHH:mm when printed on the ticket. Do not invent a time or timezone; return an empty string for a date-time that is not readable. Extract the travel date in YYYY-MM-DD format. Extract the carrier, ticket or booking number, currency, and amount where shown. The items array must always contain at least one ticket item with quantity 1. If no price is shown, use 0 for its unitPrice and total. Return only the requested JSON schema.';
             $userPrompt = 'Read this transport ticket. Departure, departure country, destination, destination country, departureDateTime, arrivalDateTime, and travel date are required when visible.';
@@ -109,7 +114,7 @@ class OpenRouterReceiptScanner
 
     private function normalizeResult(array $result, string $documentType): array
     {
-        $allowedCategories = ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Autobuska karta', 'Vozna karta', 'Prijevozna karta', 'Ostalo'];
+        $allowedCategories = ['Gorivo', 'Smještaj', 'Prehrana', 'Rent-a-car', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Autobuska karta', 'Vozna karta', 'Prijevozna karta', 'Ostalo'];
         $category = $documentType === 'air-ticket'
             ? 'Avionska karta'
             : $this->stringValue($result['category'] ?? '');
@@ -233,7 +238,7 @@ class OpenRouterReceiptScanner
                 'vendor' => ['type' => 'string'],
                 'date' => ['type' => 'string'],
                 'receiptNumber' => ['type' => 'string'],
-                'category' => ['type' => 'string', 'enum' => ['Gorivo', 'Smještaj', 'Prehrana', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Autobuska karta', 'Vozna karta', 'Prijevozna karta', 'Ostalo']],
+                'category' => ['type' => 'string', 'enum' => ['Gorivo', 'Smještaj', 'Prehrana', 'Rent-a-car', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Autobuska karta', 'Vozna karta', 'Prijevozna karta', 'Ostalo']],
                 'currency' => ['type' => 'string'],
                 'subtotal' => ['type' => 'number', 'description' => 'Receipt amount before tax.'],
                 'vat' => ['type' => 'number', 'description' => 'Total tax amount, including VAT, sales tax, GST, or another tax type shown on the document.'],

@@ -201,6 +201,43 @@ class ReceiptScanTest extends TestCase
         );
     }
 
+    public function test_rent_a_car_receipt_category_is_detected_and_preserved(): void
+    {
+        config([
+            'services.openrouter.api_key' => 'server-secret',
+            'services.openrouter.model' => 'test-model',
+            'services.openrouter.url' => 'https://openrouter.test/chat/completions',
+        ]);
+        Http::fake([
+            'openrouter.test/*' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => json_encode(array_merge($this->scanResult(), [
+                        'vendor' => 'Sixt',
+                        'category' => 'Rent-a-car',
+                        'description' => 'Najam vozila',
+                    ]))],
+                ]],
+            ]),
+        ]);
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/receipt-scans', [
+            'images' => [['base64' => 'abc', 'mimeType' => 'image/jpeg']],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.vendor', 'Sixt')
+            ->assertJsonPath('data.category', 'Rent-a-car');
+
+        Http::assertSent(fn ($request) => str_contains(
+            (string) data_get($request->data(), 'messages.0.content'),
+            'car rental/car hire',
+        ) && in_array(
+            'Rent-a-car',
+            (array) data_get($request->data(), 'response_format.json_schema.schema.properties.category.enum'),
+            true,
+        ));
+    }
+
     private function scanResult(): array
     {
         return [
