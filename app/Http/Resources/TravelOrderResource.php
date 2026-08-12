@@ -27,6 +27,19 @@ class TravelOrderResource extends JsonResource
 
             return $expense;
         })->values()->all();
+        $receiptImages = collect($this->receipt_images ?? []);
+        if ($this->receipt_images === null) {
+            foreach ($expenses as $expense) {
+                if (empty($expense['imageUri']) && empty($expense['imageData'])) continue;
+                $receiptImages->push([
+                    'id' => 'legacy-'.($expense['id'] ?? uniqid()),
+                    'expenseId' => $expense['id'],
+                    'imageUri' => $expense['imageUri'] ?? null,
+                    'imageData' => $expense['imageData'] ?? null,
+                    'imageMimeType' => $expense['imageMimeType'] ?? null,
+                ]);
+            }
+        }
 
         return [
             'id' => $this->client_id,
@@ -63,6 +76,7 @@ class TravelOrderResource extends JsonResource
             'hotelIncluded' => $this->hotel_included,
             'residenceDistanceKm' => $this->residence_distance_km,
             'expenses' => $expenses,
+            'receiptImages' => $receiptImages->values()->all(),
             'totalExpensesCost' => $this->total_expenses_cost,
             'advancementPaid' => $this->advancement_paid,
             'grandTotal' => $this->grand_total,

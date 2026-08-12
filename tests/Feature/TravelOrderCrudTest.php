@@ -207,6 +207,26 @@ class TravelOrderCrudTest extends TestCase
             ->assertJsonPath('data.expenses.0.items.0.unitPrice', 149.90);
     }
 
+    public function test_multiple_images_can_be_attached_to_one_receipt(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('test')->plainTextToken;
+        $payload = $this->payload();
+        $payload['receiptImages'] = [
+            ['id' => 'image-1', 'expenseId' => 'receipt-1', 'imageData' => 'first', 'imageMimeType' => 'image/jpeg'],
+            ['id' => 'image-2', 'expenseId' => 'receipt-1', 'imageData' => 'second', 'imageMimeType' => 'image/png'],
+        ];
+
+        $this->withToken($token)
+            ->postJson('/api/travel-orders', $payload)
+            ->assertCreated()
+            ->assertJsonCount(2, 'data.order.receiptImages')
+            ->assertJsonPath('data.order.receiptImages.0.expenseId', 'receipt-1')
+            ->assertJsonPath('data.order.receiptImages.1.id', 'image-2');
+
+        $this->assertCount(2, TravelOrder::query()->firstOrFail()->receipt_images);
+    }
+
     private function payload(): array
     {
         return [

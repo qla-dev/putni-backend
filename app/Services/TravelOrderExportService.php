@@ -40,14 +40,27 @@ class TravelOrderExportService
         $zip = new ZipArchive;
         throw_unless($zip->open($path, ZipArchive::OVERWRITE) === true, new RuntimeException('ZIP export could not be created.'));
         $zip->addFromString($export['filename'], $export['content']);
-        foreach ((array) $order->expenses as $index => $expense) {
-            $data = is_array($expense) ? (string) ($expense['imageData'] ?? '') : '';
+        $receiptImages = $order->receipt_images;
+        if ($receiptImages === null) {
+            $receiptImages = collect((array) $order->expenses)->flatMap(fn (array $expense): array =>
+                empty($expense['imageData']) ? [] : [[
+                    'id' => 'legacy-'.($expense['id'] ?? ''),
+                    'expenseId' => $expense['id'] ?? '',
+                    'imageData' => $expense['imageData'],
+                    'imageMimeType' => $expense['imageMimeType'] ?? null,
+                ]]
+            )->values()->all();
+        }
+        $expensesById = collect((array) $order->expenses)->keyBy('id');
+        foreach ((array) $receiptImages as $index => $image) {
+            $data = is_array($image) ? (string) ($image['imageData'] ?? '') : '';
             if ($data === '') continue;
             if (str_starts_with($data, 'data:')) $data = (string) (explode(',', $data, 2)[1] ?? '');
             $binary = base64_decode($data, true);
             if ($binary === false) continue;
-            $mime = is_array($expense) ? (string) ($expense['imageMimeType'] ?? 'image/jpeg') : 'image/jpeg';
+            $mime = is_array($image) ? (string) ($image['imageMimeType'] ?? 'image/jpeg') : 'image/jpeg';
             $extension = match ($mime) { 'image/png' => 'png', 'image/webp' => 'webp', default => 'jpg' };
+            $expense = is_array($image) ? $expensesById->get($image['expenseId'] ?? '') : null;
             $label = preg_replace('/[^\pL\pN_.-]+/u', '_', (string) ($expense['vendor'] ?? $expense['category'] ?? 'racun'));
             $zip->addFromString('galerija/'.str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT)."_{$label}.{$extension}", $binary);
         }
