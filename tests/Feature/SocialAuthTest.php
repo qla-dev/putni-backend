@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -41,5 +42,37 @@ class SocialAuthTest extends TestCase
     {
         $this->getJson('/api/travel-orders')->assertUnauthorized();
         $this->getJson('/api/auth/me')->assertUnauthorized();
+    }
+
+    public function test_profile_is_soft_deleted_and_restored_on_the_next_social_login(): void
+    {
+        config()->set('services.google.client_ids', ['client-id']);
+        Http::fake([
+            'oauth2.googleapis.com/tokeninfo*' => Http::response([
+                'sub' => 'google-restore',
+                'aud' => 'client-id',
+                'email' => 'restore@example.com',
+                'email_verified' => 'true',
+                'name' => 'Restore Me',
+                'exp' => time() + 3600,
+            ]),
+        ]);
+
+        $login = $this->postJson('/api/auth/google', ['id_token' => 'valid'])->assertOk();
+        $userId = $login->json('user.id');
+
+        $this->withToken($login->json('token'))
+            ->deleteJson('/api/auth/me')
+            ->assertNoContent();
+
+        $this->assertSoftDeleted('users', ['id' => $userId]);
+
+        $restoredLogin = $this->postJson('/api/auth/google', ['id_token' => 'valid'])
+            ->assertOk()
+            ->assertJsonPath('user.id', $userId)
+            ->assertJsonPath('is_new_user', false);
+
+        $this->assertNull(User::query()->findOrFail($userId)->deleted_at);
+        $this->withToken($restoredLogin->json('token'))->getJson('/api/auth/me')->assertOk();
     }
 }

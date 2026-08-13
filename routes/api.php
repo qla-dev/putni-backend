@@ -1,11 +1,11 @@
 <?php
 
-use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AllowanceRateController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\LampyrisAuthController;
-use App\Http\Controllers\Api\RevenueCatController;
 use App\Http\Controllers\Api\ReceiptScanController;
+use App\Http\Controllers\Api\RevenueCatController;
 use App\Http\Controllers\Api\TravelOrderController;
 use App\Http\Controllers\Api\TravelOrderExportController;
 use App\Http\Controllers\Api\UserVehicleController;
@@ -23,6 +23,7 @@ Route::prefix('auth')->group(function () {
     Route::middleware(['auth:sanctum', 'putni.user'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::patch('me', [AuthController::class, 'update']);
+        Route::delete('me', [AuthController::class, 'destroy']);
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('revenuecat/sync-credits', [RevenueCatController::class, 'syncCredits']);
         Route::post('credits/consume', [RevenueCatController::class, 'consumeCredit']);

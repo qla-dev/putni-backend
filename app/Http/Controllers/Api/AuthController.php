@@ -58,9 +58,17 @@ class AuthController extends Controller
             'iban' => ['sometimes', 'nullable', 'string', 'max:50'],
         ]);
         $updates = [];
-        if (isset($validated['jobTitle'])) $updates['job_title'] = trim($validated['jobTitle']);
-        foreach (['name', 'email', 'phone', 'oib', 'iban'] as $field) if (array_key_exists($field, $validated)) $updates[$field] = trim((string) ($validated[$field] ?? ''));
-        if ($updates) $request->user()->update($updates);
+        if (isset($validated['jobTitle'])) {
+            $updates['job_title'] = trim($validated['jobTitle']);
+        }
+        foreach (['name', 'email', 'phone', 'oib', 'iban'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $updates[$field] = trim((string) ($validated[$field] ?? ''));
+            }
+        }
+        if ($updates) {
+            $request->user()->update($updates);
+        }
 
         return response()->json(['user' => new UserResource($request->user()->refresh())]);
     }
@@ -72,6 +80,15 @@ class AuthController extends Controller
         return response()->json(['message' => 'Logged out successfully.']);
     }
 
+    public function destroy(Request $request)
+    {
+        $user = $request->user();
+        $user->tokens()->delete();
+        $user->delete();
+
+        return response()->noContent();
+    }
+
     private function authenticate(string $provider, mixed $providerId, mixed $email, mixed $name)
     {
         $tokenField = "{$provider}_id";
@@ -81,7 +98,7 @@ class AuthController extends Controller
             ]);
         }
 
-        $query = User::query()->where($tokenField, $providerId);
+        $query = User::withTrashed()->where($tokenField, $providerId);
         if (is_string($email) && $email !== '') {
             $query->orWhere('email', $email);
         }
@@ -96,6 +113,9 @@ class AuthController extends Controller
         }
 
         if ($user) {
+            if ($user->trashed()) {
+                $user->restore();
+            }
             $user->forceFill([$tokenField => $providerId])->save();
         } else {
             if (! is_string($email) || $email === '') {
