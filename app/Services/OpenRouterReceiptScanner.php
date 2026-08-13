@@ -2,8 +2,11 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 use RuntimeException;
@@ -11,6 +14,8 @@ use RuntimeException;
 class OpenRouterReceiptScanner
 {
     private const BAM_PER_EUR = 1.95583;
+
+    private const MAX_ATTEMPTS = 3;
 
     public function scan(array $images, string $documentType = 'receipt'): array
     {
@@ -32,57 +37,100 @@ class OpenRouterReceiptScanner
             $userPrompt = 'Read this transport ticket. Departure, departure country, destination, destination country, departureDateTime, arrivalDateTime, and travel date are required when visible.';
         }
 
-        $response = Http::withToken((string) config('services.openrouter.api_key'))
-            ->acceptJson()
-            ->timeout(90)
-            ->withHeaders([
-                'HTTP-Referer' => config('app.url'),
-                'X-Title' => 'Putni Nalozi AI Scanner',
-            ])
-            ->post((string) config('services.openrouter.url'), [
-                'model' => config('services.openrouter.model'),
-                'temperature' => 0,
-                'provider' => ['require_parameters' => true],
-                'response_format' => [
-                    'type' => 'json_schema',
-                    'json_schema' => [
-                        'name' => $isAirTicket ? 'putni_nalozi_air_ticket' : 'putni_nalozi_receipt',
-                        'strict' => true,
-                        'schema' => $this->schema(),
-                    ],
-                ],
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => $systemPrompt,
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => [
-                            [
-                                'type' => 'text',
-                                'text' => $userPrompt,
-                            ],
-                            ...array_map(fn (array $image) => [
-                                'type' => 'image_url',
-                                'image_url' => [
-                                    'url' => 'data:'.($image['mimeType'] ?? 'image/jpeg').';base64,'.$image['base64'],
-                                ],
-                            ], $images),
-                        ],
-                    ],
-                ],
-            ]);
+        $systemPrompt .= ' Set isReceipt to true only when the image really shows a receipt, invoice, proof of payment, or the requested travel ticket. For any other image set isReceipt to false and do not invent document data.';
+        $userPrompt .= ' You must determine isReceipt. If this is not a receipt or the requested ticket, return isReceipt=false.';
+        $payload = $this->requestPayload($images, $isAirTicket, $systemPrompt, $userPrompt);
+        $storedPrompt = json_encode([
+            'model' => $payload['model'],
+            'documentType' => $documentType,
+            'system' => $systemPrompt,
+            'user' => $userPrompt,
+            'imageCount' => count($images),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: $userPrompt;
 
-        $this->ensureSuccessful($response);
+        for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
+            try {
+                $response = Http::withToken((string) config('services.openrouter.api_key'))
+                    ->acceptJson()
+                    ->timeout(90)
+                    ->withHeaders([
+                        'HTTP-Referer' => config('app.url'),
+                        'X-Title' => 'Putni Nalozi AI Scanner',
+                    ])
+                    ->post((string) config('services.openrouter.url'), $payload);
 
-        try {
-            $result = json_decode($this->outputText($response->json()), true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            throw new RuntimeException('AI servis je vratio neispravan rezultat skeniranja.');
+                $this->storeAiCall($storedPrompt, $response->body());
+                $this->ensureSuccessful($response);
+                $result = json_decode($this->outputText($response->json()), true, 512, JSON_THROW_ON_ERROR);
+                if (! is_array($result)) {
+                    throw new RuntimeException('AI servis je vratio neispravan rezultat skeniranja.');
+                }
+
+                return $this->normalizeResult($result, $documentType);
+            } catch (ConnectionException|JsonException|RuntimeException|ValidationException $exception) {
+                if (! isset($response)) {
+                    $this->storeAiCall($storedPrompt, json_encode([
+                        'error' => $exception->getMessage(),
+                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: $exception->getMessage());
+                }
+
+                if ($attempt === self::MAX_ATTEMPTS) {
+                    if ($exception instanceof ValidationException) {
+                        throw $exception;
+                    }
+                    throw ValidationException::withMessages([
+                        'images' => ['AI nije uspio ispravno ocitati dokument ni nakon automatskih pokusaja. Pokusajte ponovo.'],
+                    ]);
+                }
+
+                Log::warning('Receipt scan AI call failed; retrying automatically.', [
+                    'attempt' => $attempt,
+                    'max_attempts' => self::MAX_ATTEMPTS,
+                    'error' => $exception->getMessage(),
+                ]);
+                unset($response);
+            }
         }
+    }
 
-        return $this->normalizeResult(is_array($result) ? $result : [], $documentType);
+    private function requestPayload(array $images, bool $isAirTicket, string $systemPrompt, string $userPrompt): array
+    {
+        return [
+            'model' => config('services.openrouter.model'),
+            'temperature' => 0,
+            'provider' => ['require_parameters' => true],
+            'response_format' => [
+                'type' => 'json_schema',
+                'json_schema' => [
+                    'name' => $isAirTicket ? 'putni_nalozi_air_ticket' : 'putni_nalozi_receipt',
+                    'strict' => true,
+                    'schema' => $this->schema(),
+                ],
+            ],
+            'messages' => [
+                ['role' => 'system', 'content' => $systemPrompt],
+                [
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'text', 'text' => $userPrompt],
+                        ...array_map(fn (array $image) => [
+                            'type' => 'image_url',
+                            'image_url' => [
+                                'url' => 'data:'.($image['mimeType'] ?? 'image/jpeg').';base64,'.$image['base64'],
+                            ],
+                        ], $images),
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    private function storeAiCall(string $prompt, string $response): void
+    {
+        DB::table('ai_calls')->insert([
+            'prompt' => $prompt,
+            'response' => $response,
+        ]);
     }
 
     private function ensureSuccessful(Response $response): void
@@ -114,6 +162,7 @@ class OpenRouterReceiptScanner
 
     private function normalizeResult(array $result, string $documentType): array
     {
+        $isReceipt = ($result['isReceipt'] ?? true) === true;
         $allowedCategories = ['Gorivo', 'Smještaj', 'Prehrana', 'Rent-a-car', 'Cestarina', 'Parking', 'Mostarina', 'Tunelarina', 'Vinjeta', 'Trajekt', 'Avionska karta', 'Autobuska karta', 'Vozna karta', 'Prijevozna karta', 'Ostalo'];
         $category = $documentType === 'air-ticket'
             ? 'Avionska karta'
@@ -167,6 +216,9 @@ class OpenRouterReceiptScanner
             is_array($result['warnings'] ?? null) ? $result['warnings'] : [],
             fn ($warning) => is_string($warning) && trim($warning) !== '',
         ));
+        if (! $isReceipt) {
+            $warnings[] = "Prilo\u{017E}ena fotografija nije prepoznata kao ra\u{010D}un ili putna karta.";
+        }
 
         $vendorFallback = $category === 'Avionska karta'
             ? 'Nepoznata aviokompanija'
@@ -179,6 +231,7 @@ class OpenRouterReceiptScanner
         }
 
         return [
+            'isReceipt' => $isReceipt,
             'vendor' => $this->stringValue($result['vendor'] ?? '', $vendorFallback),
             'date' => $date,
             'receiptNumber' => $this->stringValue($result['receiptNumber'] ?? ''),
@@ -233,8 +286,9 @@ class OpenRouterReceiptScanner
         return [
             'type' => 'object',
             'additionalProperties' => false,
-            'required' => ['vendor', 'date', 'receiptNumber', 'category', 'currency', 'subtotal', 'vat', 'total', 'totalInEur', 'paymentMethod', 'description', 'items', 'confidence', 'warnings', 'departureLocation', 'destinationLocation', 'departureCountry', 'destinationCountry', 'departureDateTime', 'arrivalDateTime'],
+            'required' => ['isReceipt', 'vendor', 'date', 'receiptNumber', 'category', 'currency', 'subtotal', 'vat', 'total', 'totalInEur', 'paymentMethod', 'description', 'items', 'confidence', 'warnings', 'departureLocation', 'destinationLocation', 'departureCountry', 'destinationCountry', 'departureDateTime', 'arrivalDateTime'],
             'properties' => [
+                'isReceipt' => ['type' => 'boolean', 'description' => 'True only when the image is a receipt, invoice, payment confirmation, or the requested travel ticket.'],
                 'vendor' => ['type' => 'string'],
                 'date' => ['type' => 'string'],
                 'receiptNumber' => ['type' => 'string'],

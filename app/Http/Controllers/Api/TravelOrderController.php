@@ -279,6 +279,7 @@ class TravelOrderController extends Controller
             'expenses.*.imageMimeType' => ['sometimes', 'nullable', 'string', 'max:100'],
             'expenses.*.originalAmount' => ['sometimes', 'numeric', 'min:0'],
             'expenses.*.scannedByAi' => ['sometimes', 'boolean'],
+            'expenses.*.isReceipt' => ['sometimes', 'boolean'],
             'expenses.*.subtotal' => ['sometimes', 'numeric', 'min:0'],
             'expenses.*.vat' => ['sometimes', 'numeric', 'min:0'],
             'expenses.*.currency' => ['sometimes', 'string', 'max:10'],

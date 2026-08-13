@@ -46,6 +46,93 @@ class ReceiptScanTest extends TestCase
             && $request->hasHeader('Authorization', 'Bearer server-secret')
             && $request['model'] === 'test-model'
         );
+
+        $this->assertDatabaseCount('ai_calls', 1);
+    }
+
+    public function test_invalid_ai_output_is_retried_twice_and_every_response_is_saved(): void
+    {
+        config([
+            'services.openrouter.api_key' => 'server-secret',
+            'services.openrouter.model' => 'test-model',
+            'services.openrouter.url' => 'https://openrouter.test/chat/completions',
+        ]);
+        Http::fakeSequence('openrouter.test/*')
+            ->push(['choices' => [['message' => ['content' => 'not-json']]]])
+            ->push(['choices' => [['message' => ['content' => '{still-invalid']]]])
+            ->push(['choices' => [['message' => ['content' => json_encode($this->scanResult())]]]]);
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/receipt-scans', [
+            'images' => [['base64' => 'abc', 'mimeType' => 'image/jpeg']],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.vendor', 'Test trgovina');
+
+        Http::assertSentCount(3);
+        $this->assertDatabaseCount('ai_calls', 3);
+    }
+
+    public function test_non_receipt_image_is_returned_for_attachment_but_marked_invalid(): void
+    {
+        config([
+            'services.openrouter.api_key' => 'server-secret',
+            'services.openrouter.model' => 'test-model',
+            'services.openrouter.url' => 'https://openrouter.test/chat/completions',
+        ]);
+        Http::fake([
+            'openrouter.test/*' => Http::response([
+                'choices' => [[
+                    'message' => ['content' => json_encode(array_merge($this->scanResult(), [
+                        'isReceipt' => false,
+                        'vendor' => '',
+                        'total' => 0,
+                        'items' => [],
+                    ]))],
+                ]],
+            ]),
+        ]);
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/receipt-scans', [
+            'images' => [['base64' => 'not-a-receipt', 'mimeType' => 'image/jpeg']],
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.isReceipt', false)
+            ->assertJsonPath('data.total', 0)
+            ->assertJsonCount(1, 'data.warnings');
+
+        Http::assertSent(fn ($request) => data_get(
+            $request->data(),
+            'response_format.json_schema.schema.properties.isReceipt.type',
+        ) === 'boolean');
+    }
+
+    public function test_three_invalid_outputs_return_a_controlled_validation_error_instead_of_server_error(): void
+    {
+        config([
+            'services.openrouter.api_key' => 'server-secret',
+            'services.openrouter.model' => 'test-model',
+            'services.openrouter.url' => 'https://openrouter.test/chat/completions',
+        ]);
+        Http::fake([
+            'openrouter.test/*' => Http::response([
+                'choices' => [['message' => ['content' => 'not-json']]],
+            ]),
+        ]);
+        Sanctum::actingAs(User::factory()->create());
+
+        $this->postJson('/api/receipt-scans', [
+            'images' => [['base64' => 'abc', 'mimeType' => 'image/jpeg']],
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'errors.images.0',
+                'AI nije uspio ispravno ocitati dokument ni nakon automatskih pokusaja. Pokusajte ponovo.',
+            );
+
+        Http::assertSentCount(3);
+        $this->assertDatabaseCount('ai_calls', 3);
     }
 
     public function test_scan_reports_missing_server_configuration(): void
@@ -241,6 +328,7 @@ class ReceiptScanTest extends TestCase
     private function scanResult(): array
     {
         return [
+            'isReceipt' => true,
             'vendor' => 'Test trgovina',
             'date' => '2026-07-27',
             'receiptNumber' => 'R-1',
