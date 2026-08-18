@@ -284,7 +284,7 @@ class TravelOrderController extends Controller
             'bmb95Price' => ['sometimes', 'numeric', 'min:0'],
             'dailyAllowanceRateEur' => [$required, 'numeric', 'min:0'],
             'dailyAllowanceAuto' => ['sometimes', 'nullable', 'boolean'],
-            'mainCardType' => ['sometimes', 'nullable', Rule::in(['Kartica', 'Business Kartica'])],
+            'mainCardType' => ['sometimes', 'nullable', Rule::in(['Keš', 'Kartica', 'Business Kartica'])],
             'totalAllowanceCost' => [$required, 'numeric', 'min:0'],
             // These fields were added after the first mobile release, so creation
             // must remain compatible with clients that do not send them.
