@@ -257,6 +257,7 @@ class TravelOrderController extends Controller
             'totalKmCost' => [$required, 'numeric', 'min:0'],
             'bmb95Price' => ['sometimes', 'numeric', 'min:0'],
             'dailyAllowanceRateEur' => [$required, 'numeric', 'min:0'],
+            'dailyAllowanceAuto' => ['sometimes', 'nullable', 'boolean'],
             'totalAllowanceCost' => [$required, 'numeric', 'min:0'],
             // These fields were added after the first mobile release, so creation
             // must remain compatible with clients that do not send them.
@@ -345,6 +346,7 @@ class TravelOrderController extends Controller
             'totalKmCost' => 'total_km_cost',
             'bmb95Price' => 'bmb95_price',
             'dailyAllowanceRateEur' => 'daily_allowance_rate_eur',
+            'dailyAllowanceAuto' => 'daily_allowance_auto',
             'totalAllowanceCost' => 'total_allowance_cost',
             'breakfastIncluded' => 'breakfast_included',
             'lunchIncluded' => 'lunch_included',
@@ -375,6 +377,7 @@ class TravelOrderController extends Controller
                 'total_hours' => $existingOrder->total_hours,
                 'total_km' => $existingOrder->total_km,
                 'daily_allowance_rate_eur' => $existingOrder->daily_allowance_rate_eur,
+                'daily_allowance_auto' => $existingOrder->daily_allowance_auto,
                 'total_km_cost' => $existingOrder->total_km_cost,
                 'bmb95_price' => $existingOrder->bmb95_price,
                 'total_expenses_cost' => $existingOrder->total_expenses_cost,
