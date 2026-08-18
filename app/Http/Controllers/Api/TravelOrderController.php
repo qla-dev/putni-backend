@@ -84,6 +84,7 @@ class TravelOrderController extends Controller
             'totalOrders' => $orders->count(),
             'grandTotal' => round((float) $orders->sum('grand_total'), 2),
             'balanceToPay' => round((float) $orders->sum('balance_to_pay'), 2),
+            'paidTotal' => round((float) $orders->where('status', 'isplaceno')->sum('balance_to_pay'), 2),
             'statusCounts' => $statusCounts,
             'expensesByCategory' => array_map(fn (float $amount): float => round($amount, 2), $expensesByCategory),
         ]]);
