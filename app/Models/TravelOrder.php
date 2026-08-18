@@ -37,6 +37,7 @@ class TravelOrder extends Model
         'bmb95_price',
         'daily_allowance_rate_eur',
         'daily_allowance_auto',
+        'main_card_type',
         'total_allowance_cost',
         'breakfast_included',
         'lunch_included',

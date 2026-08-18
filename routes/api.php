@@ -53,6 +53,7 @@ Route::middleware(['auth:sanctum', 'putni.user'])->group(function () {
     Route::get('company/members/{member}', [CompanyController::class, 'member']);
     Route::delete('company/members/{member}', [CompanyController::class, 'removeMember']);
     Route::get('exports', [TravelOrderExportController::class, 'index']);
+    Route::get('travel-orders/stats', [TravelOrderController::class, 'stats']);
     Route::get('travel-orders/{travelOrder}/exports/{exportFormat:name}', [TravelOrderExportController::class, 'show']);
     Route::get('travel-orders/{travelOrder}/receipt-images', [TravelOrderController::class, 'receiptImages']);
     Route::post('travel-orders/{travelOrder}/receipt-images', [TravelOrderController::class, 'storeReceiptImage']);

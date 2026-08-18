@@ -62,6 +62,7 @@ class TravelOrderResource extends JsonResource
             'bmb95Price' => $this->bmb95_price,
             'dailyAllowanceRateEur' => $this->daily_allowance_rate_eur,
             'dailyAllowanceAuto' => $this->daily_allowance_auto,
+            'mainCardType' => $this->main_card_type,
             'totalAllowanceCost' => $this->total_allowance_cost,
             'breakfastIncluded' => $this->breakfast_included,
             'lunchIncluded' => $this->lunch_included,

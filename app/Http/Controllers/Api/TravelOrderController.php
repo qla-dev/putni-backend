@@ -63,6 +63,32 @@ class TravelOrderController extends Controller
         return new TravelOrderResource($order);
     }
 
+    public function stats(Request $request)
+    {
+        $orders = $request->user()->travelOrders()->get(['status', 'grand_total', 'balance_to_pay', 'expenses']);
+
+        $statusCounts = collect(['nacrt', 'poslano', 'odobreno', 'odbijeno', 'isplaceno'])
+            ->mapWithKeys(fn (string $status): array => [$status => $orders->where('status', $status)->count()])
+            ->all();
+
+        $expensesByCategory = [];
+        foreach ($orders as $order) {
+            foreach ($order->expenses ?? [] as $expense) {
+                if (! is_array($expense)) continue;
+                $category = (string) ($expense['category'] ?? 'Ostalo');
+                $expensesByCategory[$category] = ($expensesByCategory[$category] ?? 0) + (float) ($expense['amountInEur'] ?? 0);
+            }
+        }
+
+        return response()->json(['data' => [
+            'totalOrders' => $orders->count(),
+            'grandTotal' => round((float) $orders->sum('grand_total'), 2),
+            'balanceToPay' => round((float) $orders->sum('balance_to_pay'), 2),
+            'statusCounts' => $statusCounts,
+            'expensesByCategory' => array_map(fn (float $amount): float => round($amount, 2), $expensesByCategory),
+        ]]);
+    }
+
     public function receiptImages(Request $request, string $travelOrder)
     {
         $order = $request->user()->travelOrders()
@@ -258,6 +284,7 @@ class TravelOrderController extends Controller
             'bmb95Price' => ['sometimes', 'numeric', 'min:0'],
             'dailyAllowanceRateEur' => [$required, 'numeric', 'min:0'],
             'dailyAllowanceAuto' => ['sometimes', 'nullable', 'boolean'],
+            'mainCardType' => ['sometimes', 'nullable', Rule::in(['Kartica', 'Business Kartica'])],
             'totalAllowanceCost' => [$required, 'numeric', 'min:0'],
             // These fields were added after the first mobile release, so creation
             // must remain compatible with clients that do not send them.
@@ -347,6 +374,7 @@ class TravelOrderController extends Controller
             'bmb95Price' => 'bmb95_price',
             'dailyAllowanceRateEur' => 'daily_allowance_rate_eur',
             'dailyAllowanceAuto' => 'daily_allowance_auto',
+            'mainCardType' => 'main_card_type',
             'totalAllowanceCost' => 'total_allowance_cost',
             'breakfastIncluded' => 'breakfast_included',
             'lunchIncluded' => 'lunch_included',
