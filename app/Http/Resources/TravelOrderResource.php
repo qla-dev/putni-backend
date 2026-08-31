@@ -60,6 +60,7 @@ class TravelOrderResource extends JsonResource
             'totalKm' => $this->total_km,
             'totalKmCost' => $this->total_km_cost,
             'bmb95Price' => $this->bmb95_price,
+            'bmb95Currency' => $this->bmb95_currency ?? 'BAM',
             'dailyAllowanceRateEur' => $this->daily_allowance_rate_eur,
             'dailyAllowanceAuto' => $this->daily_allowance_auto,
             'mainCardType' => $this->main_card_type,

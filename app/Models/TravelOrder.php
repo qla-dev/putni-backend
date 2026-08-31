@@ -35,6 +35,7 @@ class TravelOrder extends Model
         'total_km',
         'total_km_cost',
         'bmb95_price',
+        'bmb95_currency',
         'daily_allowance_rate_eur',
         'daily_allowance_auto',
         'main_card_type',
