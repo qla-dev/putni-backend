@@ -504,7 +504,7 @@ class SkulaPdfRenderer
         $objects[] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding 5 0 R >>';
         $objects[] = '<< /Type /Encoding /BaseEncoding /WinAnsiEncoding /Differences [127 /Dcroat 129 /ccaron 141 /Ccaron 143 /cacute 144 /Cacute 157 /dcroat] >>';
 
-        $kids = [];
+        $kids = []; 
         foreach ($pages as $page) {
             $references = [];
             foreach ($page['annotations'] as $annotation) {
