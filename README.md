@@ -14,8 +14,8 @@ Set the platform-specific `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_IOS_CLIENT_ID`, and
 `GOOGLE_ANDROID_CLIENT_ID` values and `APPLE_CLIENT_IDS` in `.env`.
 `GOOGLE_CLIENT_IDS` may additionally contain a comma-separated allowlist.
 The Android OAuth client must be registered for package `radni.qla.dev` and
-the production signing-certificate SHA-1. Run the isolated SQLite feature
-tests with `php artisan test`.
+the production signing-certificate SHA-1. Feature tests require a dedicated
+local MySQL database named `putni_nalozi_testing`; run them with `php artisan test`.
 
 API routes are under `/api`, including `/api/auth/google`,
 `/api/auth/apple`, and `/api/travel-orders`.

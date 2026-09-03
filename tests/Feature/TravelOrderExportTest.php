@@ -6,6 +6,7 @@ use App\Models\User;
 use Database\Seeders\ExportFormatSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
+use ZipArchive;
 
 class TravelOrderExportTest extends TestCase
 {
@@ -54,6 +55,44 @@ class TravelOrderExportTest extends TestCase
         $this->withToken($other->createToken('other')->plainTextToken)
             ->get("/api/travel-orders/{$order->client_id}/exports/pdf")
             ->assertNotFound();
+    }
+
+    public function test_skula_export_is_valid_and_uses_vendor_names_and_numeric_styles(): void
+    {
+        $this->seed(ExportFormatSeeder::class);
+        $user = User::factory()->create();
+        $order = $user->travelOrders()->create($this->orderData());
+
+        $content = $this->withToken($user->createToken('test')->plainTextToken)
+            ->get("/api/travel-orders/{$order->client_id}/exports/skula")
+            ->assertOk()
+            ->getContent();
+
+        $temporary = tempnam(sys_get_temp_dir(), 'skula_test_');
+        $this->assertNotFalse($temporary);
+        file_put_contents($temporary, $content);
+
+        $zip = new ZipArchive;
+        $this->assertTrue($zip->open($temporary));
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $relationships = $zip->getFromName('xl/_rels/workbook.xml.rels');
+        $contentTypes = $zip->getFromName('[Content_Types].xml');
+
+        $this->assertIsString($sheet);
+        $this->assertStringContainsString('view="normal"', $sheet);
+        $this->assertStringNotContainsString('pageBreakPreview', $sheet);
+        $this->assertStringContainsString('<c r="B14" s="27" t="inlineStr"><is><t xml:space="preserve">TEST OIL</t></is></c>', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="C14" s="91"><v>1<\/v><\/c>/', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="D14" s="91"><v>97\.79<\/v><\/c>/', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="E14" s="90"><v>97\.79<\/v><\/c>/', $sheet);
+        $this->assertFalse($zip->locateName('xl/calcChain.xml'));
+        $this->assertIsString($relationships);
+        $this->assertStringNotContainsString('calcChain', $relationships);
+        $this->assertIsString($contentTypes);
+        $this->assertStringNotContainsString('calcChain', $contentTypes);
+
+        $zip->close();
+        @unlink($temporary);
     }
 
     private function orderData(): array

@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class TravelOrderController extends Controller
 {
@@ -26,7 +26,6 @@ class TravelOrderController extends Controller
         ]);
         $expenseCountSql = match (DB::connection()->getDriverName()) {
             'pgsql' => 'COALESCE(jsonb_array_length(receipt_images::jsonb), jsonb_array_length(expenses::jsonb))',
-            'sqlite' => 'COALESCE(json_array_length(receipt_images), json_array_length(expenses))',
             default => 'COALESCE(JSON_LENGTH(receipt_images), JSON_LENGTH(expenses))',
         };
         $query = $request->user()->travelOrders()
@@ -74,7 +73,9 @@ class TravelOrderController extends Controller
         $expensesByCategory = [];
         foreach ($orders as $order) {
             foreach ($order->expenses ?? [] as $expense) {
-                if (! is_array($expense)) continue;
+                if (! is_array($expense)) {
+                    continue;
+                }
                 $category = (string) ($expense['category'] ?? 'Ostalo');
                 $expensesByCategory[$category] = ($expensesByCategory[$category] ?? 0) + (float) ($expense['amountInEur'] ?? 0);
             }
@@ -122,7 +123,9 @@ class TravelOrderController extends Controller
         $existingImage = collect($order->receipt_images ?? [])->first(
             fn (mixed $image): bool => is_array($image) && ($image['id'] ?? null) === $validated['id']
         );
-        if (is_array($existingImage)) $this->deleteStoredReceiptImage($existingImage['imageUri'] ?? null);
+        if (is_array($existingImage)) {
+            $this->deleteStoredReceiptImage($existingImage['imageUri'] ?? null);
+        }
         $image = [
             'id' => $validated['id'],
             'expenseId' => $validated['expenseId'],
@@ -143,7 +146,9 @@ class TravelOrderController extends Controller
         $removed = null;
         $images = collect($order->receipt_images ?? [])->reject(function (mixed $image) use ($imageId, &$removed): bool {
             $matches = is_array($image) && ($image['id'] ?? null) === $imageId;
-            if ($matches) $removed = $image;
+            if ($matches) {
+                $removed = $image;
+            }
 
             return $matches;
         })->values()->all();
@@ -154,7 +159,9 @@ class TravelOrderController extends Controller
         } elseif (str_starts_with($imageId, 'legacy-')) {
             $expenseId = substr($imageId, strlen('legacy-'));
             $expenses = collect($order->expenses ?? [])->map(function (mixed $expense) use ($expenseId): mixed {
-                if (! is_array($expense) || ($expense['id'] ?? null) !== $expenseId) return $expense;
+                if (! is_array($expense) || ($expense['id'] ?? null) !== $expenseId) {
+                    return $expense;
+                }
                 unset($expense['imageUri'], $expense['imageData'], $expense['imageMimeType']);
 
                 return $expense;
@@ -241,7 +248,9 @@ class TravelOrderController extends Controller
             ->where('client_id', $travelOrder)
             ->firstOrFail();
         foreach ($order->receipt_images ?? [] as $image) {
-            if (is_array($image)) $this->deleteStoredReceiptImage($image['imageUri'] ?? null);
+            if (is_array($image)) {
+                $this->deleteStoredReceiptImage($image['imageUri'] ?? null);
+            }
         }
         $order->delete();
 
@@ -461,14 +470,20 @@ class TravelOrderController extends Controller
     {
         $images = collect($order->receipt_images ?? []);
         foreach ($order->expenses ?? [] as $expense) {
-            if (! is_array($expense) || (empty($expense['imageUri']) && empty($expense['imageData']))) continue;
+            if (! is_array($expense) || (empty($expense['imageUri']) && empty($expense['imageData']))) {
+                continue;
+            }
             $alreadyIncluded = $images->contains(function (mixed $image) use ($expense): bool {
-                if (! is_array($image) || ($image['expenseId'] ?? null) !== ($expense['id'] ?? null)) return false;
+                if (! is_array($image) || ($image['expenseId'] ?? null) !== ($expense['id'] ?? null)) {
+                    return false;
+                }
 
                 return (! empty($expense['imageData']) && ($image['imageData'] ?? null) === $expense['imageData'])
                     || (! empty($expense['imageUri']) && ($image['imageUri'] ?? null) === $expense['imageUri']);
             });
-            if ($alreadyIncluded) continue;
+            if ($alreadyIncluded) {
+                continue;
+            }
             $images->prepend([
                 'id' => 'legacy-'.($expense['id'] ?? uniqid()),
                 'expenseId' => $expense['id'] ?? '',
@@ -519,7 +534,9 @@ class TravelOrderController extends Controller
                 }
             }
             imagedestroy($canvas);
-            if ($encoded !== null) break;
+            if ($encoded !== null) {
+                break;
+            }
         }
         imagedestroy($source);
 
@@ -539,7 +556,9 @@ class TravelOrderController extends Controller
     private function uploadedImageRule(): callable
     {
         return function (string $attribute, mixed $value, \Closure $fail): void {
-            if (! $value instanceof UploadedFile) return;
+            if (! $value instanceof UploadedFile) {
+                return;
+            }
             $extension = Str::lower((string) $value->getClientOriginalExtension());
             $mimeType = Str::lower((string) $value->getMimeType());
             if (! in_array($extension, ['jpeg', 'jpg', 'png', 'webp'], true)
@@ -551,11 +570,17 @@ class TravelOrderController extends Controller
 
     private function deleteStoredReceiptImage(?string $imageUri): void
     {
-        if (! $imageUri) return;
+        if (! $imageUri) {
+            return;
+        }
         $path = parse_url($imageUri, PHP_URL_PATH);
-        if (! $path || ! str_starts_with($path, '/uploads/receipts/')) return;
+        if (! $path || ! str_starts_with($path, '/uploads/receipts/')) {
+            return;
+        }
         $absolutePath = public_path(ltrim($path, '/'));
-        if (File::exists($absolutePath)) File::delete($absolutePath);
+        if (File::exists($absolutePath)) {
+            File::delete($absolutePath);
+        }
     }
 
     private function ensureTicketHasItem(array $expense): array

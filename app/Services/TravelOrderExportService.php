@@ -31,6 +31,7 @@ class TravelOrderExportService
             'filename' => $this->filename($format, $order),
             'mime_type' => $format->mime_type,
         ];
+
         return $includeImages ? $this->withImages($order, $export) : $export;
     }
 
@@ -43,36 +44,48 @@ class TravelOrderExportService
         $zip->addFromString($export['filename'], $export['content']);
         $receiptImages = collect($order->receipt_images ?? []);
         foreach ((array) $order->expenses as $expense) {
-            if (! is_array($expense) || (empty($expense['imageData']) && empty($expense['imageUri']))) continue;
+            if (! is_array($expense) || (empty($expense['imageData']) && empty($expense['imageUri']))) {
+                continue;
+            }
             if ($receiptImages->contains(fn (mixed $image): bool => is_array($image)
                 && ($image['expenseId'] ?? null) === ($expense['id'] ?? null)
                 && ((! empty($expense['imageData']) && ($image['imageData'] ?? null) === $expense['imageData'])
-                    || (! empty($expense['imageUri']) && ($image['imageUri'] ?? null) === $expense['imageUri'])))) continue;
+                    || (! empty($expense['imageUri']) && ($image['imageUri'] ?? null) === $expense['imageUri'])))) {
+                continue;
+            }
             $receiptImages->prepend([
-                    'id' => 'legacy-'.($expense['id'] ?? ''),
-                    'expenseId' => $expense['id'] ?? '',
-                    'imageData' => $expense['imageData'] ?? null,
-                    'imageUri' => $expense['imageUri'] ?? null,
-                    'imageMimeType' => $expense['imageMimeType'] ?? null,
-                ]);
+                'id' => 'legacy-'.($expense['id'] ?? ''),
+                'expenseId' => $expense['id'] ?? '',
+                'imageData' => $expense['imageData'] ?? null,
+                'imageUri' => $expense['imageUri'] ?? null,
+                'imageMimeType' => $expense['imageMimeType'] ?? null,
+            ]);
         }
         $expensesById = collect((array) $order->expenses)->keyBy('id');
         foreach ($receiptImages->values()->all() as $index => $image) {
             $data = is_array($image) ? (string) ($image['imageData'] ?? '') : '';
             $binary = null;
             if ($data !== '') {
-                if (str_starts_with($data, 'data:')) $data = (string) (explode(',', $data, 2)[1] ?? '');
+                if (str_starts_with($data, 'data:')) {
+                    $data = (string) (explode(',', $data, 2)[1] ?? '');
+                }
                 $binary = base64_decode($data, true);
             } elseif (is_array($image)) {
                 $uriPath = parse_url((string) ($image['imageUri'] ?? ''), PHP_URL_PATH);
                 if ($uriPath && str_starts_with($uriPath, '/uploads/receipts/')) {
                     $absolutePath = public_path(ltrim($uriPath, '/'));
-                    if (File::exists($absolutePath)) $binary = File::get($absolutePath);
+                    if (File::exists($absolutePath)) {
+                        $binary = File::get($absolutePath);
+                    }
                 }
             }
-            if (! is_string($binary) || $binary === '') continue;
+            if (! is_string($binary) || $binary === '') {
+                continue;
+            }
             $mime = is_array($image) ? (string) ($image['imageMimeType'] ?? 'image/jpeg') : 'image/jpeg';
-            $extension = match ($mime) { 'image/png' => 'png', 'image/webp' => 'webp', default => 'jpg' };
+            $extension = match ($mime) {
+                'image/png' => 'png', 'image/webp' => 'webp', default => 'jpg'
+            };
             $expense = is_array($image) ? $expensesById->get($image['expenseId'] ?? '') : null;
             $label = preg_replace('/[^\pL\pN_.-]+/u', '_', (string) ($expense['vendor'] ?? $expense['category'] ?? 'racun'));
             $zip->addFromString('galerija/'.str_pad((string) ($index + 1), 2, '0', STR_PAD_LEFT)."_{$label}.{$extension}", $binary);
@@ -81,6 +94,7 @@ class TravelOrderExportService
         $content = file_get_contents($path);
         @unlink($path);
         throw_unless(is_string($content), new RuntimeException('ZIP export could not be read.'));
+
         return ['content' => $content, 'filename' => preg_replace('/\.[^.]+$/', '', $export['filename']).'.zip', 'mime_type' => 'application/zip'];
     }
 
@@ -283,14 +297,22 @@ class TravelOrderExportService
         throw_unless($zip->open($temporary) === true, new RuntimeException('SKULA export archive is invalid.'));
         $xml = $zip->getFromName('xl/worksheets/sheet1.xml');
         throw_unless(is_string($xml), new RuntimeException('SKULA worksheet is missing.'));
+        $xml = $this->normalWorksheetView($xml);
 
+        $expenseRows = [14, 15, 16, 17, 20, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33];
+        $expenses = collect($order->expenses)->values();
         $allowanceQuantity = round($order->total_hours / 24, 2);
         $allowanceRate = $this->bam($order->daily_allowance_rate_eur);
         $allowanceTotal = $this->bam($order->total_allowance_cost);
+        $mileageTotal = $this->bam($order->total_km_cost);
+        $listedExpensesTotal = $expenses
+            ->take(count($expenseRows))
+            ->sum(fn (array $expense): float => $this->bam((float) ($expense['amountInEur'] ?? 0)));
         $advance = $this->bam($order->advancement_paid);
-        $expenseTotal = $this->bam($order->total_allowance_cost + $order->total_km_cost + $order->total_expenses_cost);
+        $expenseTotal = round($allowanceTotal + $mileageTotal + $listedExpensesTotal, 2);
+        $balance = $this->bam($order->balance_to_pay);
         $replacements = [
-            'C3' => strtoupper($order->employee_name),
+            'C3' => mb_strtoupper($order->employee_name, 'UTF-8'),
             'E3' => "Broj službenog naloga:                       {$order->order_number}",
             'C4' => $this->date($order->departure_time),
             'E4' => $order->departure_time->format('H:i'),
@@ -305,27 +327,37 @@ class TravelOrderExportService
             'E12' => $allowanceTotal,
             'E35' => $expenseTotal,
             'E36' => $advance,
-            'E37' => max($expenseTotal - $advance, 0),
-            'E38' => max($advance - $expenseTotal, 0),
+            'E37' => max($balance, 0),
+            'E38' => max(-$balance, 0),
             'C40' => $this->date(now()),
             'B45' => $order->employee_name,
             'C45' => $order->approved_by,
         ];
         foreach ($replacements as $cell => $value) {
-            $xml = $this->replaceCell($xml, $cell, $value);
+            $style = match ($cell) {
+                'C9', 'D9' => 91,
+                'E9', 'E12', 'E35', 'E36', 'E37', 'E38' => 90,
+                default => null,
+            };
+            $xml = $this->replaceCell($xml, $cell, $value, $style);
         }
-        $expenseRows = [14, 15, 16, 17, 20, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33];
-        $expenses = collect($order->expenses)->values();
         foreach ($expenseRows as $index => $row) {
             $expense = $expenses->get($index);
             $amount = $expense ? $this->bam((float) ($expense['amountInEur'] ?? 0)) : null;
             $xml = $this->replaceCell($xml, "A{$row}", $expense ? $index + 1 : null);
-            $xml = $this->replaceCell($xml, "B{$row}", $expense ? strtoupper($expense['description'] ?? $expense['vendor'] ?? $expense['category'] ?? '') : null);
-            $xml = $this->replaceCell($xml, "C{$row}", $expense ? 1 : null);
-            $xml = $this->replaceCell($xml, "D{$row}", $amount);
-            $xml = $this->replaceCell($xml, "E{$row}", $amount ?? 0);
+            $xml = $this->replaceCell($xml, "B{$row}", $expense ? $this->expenseVendor($expense) : null);
+            $xml = $this->replaceCell($xml, "C{$row}", $expense ? 1 : null, 91);
+            $xml = $this->replaceCell($xml, "D{$row}", $amount, 91);
+            $xml = $this->replaceCell($xml, "E{$row}", $amount ?? 0, 90);
+        }
+        foreach ([18 => [0, 4], 23 => [4, 3], 34 => [7, 9]] as $row => [$offset, $length]) {
+            $sectionTotal = $expenses
+                ->slice($offset, $length)
+                ->sum(fn (array $expense): float => $this->bam((float) ($expense['amountInEur'] ?? 0)));
+            $xml = $this->replaceCell($xml, "E{$row}", round($sectionTotal, 2), 90);
         }
         $zip->addFromString('xl/worksheets/sheet1.xml', $xml);
+        $this->removeCalculationChain($zip);
         $zip->close();
         $content = file_get_contents($temporary);
         @unlink($temporary);
@@ -334,13 +366,16 @@ class TravelOrderExportService
         return $content;
     }
 
-    private function replaceCell(string $xml, string $cell, string|int|float|null $value): string
+    private function replaceCell(string $xml, string $cell, string|int|float|null $value, ?int $style = null): string
     {
         $pattern = '/<c r="'.preg_quote($cell, '/').'"([^>]*?)(?:\s*\/>|>.*?<\/c>)/s';
         if (! preg_match($pattern, $xml, $match)) {
             return $xml;
         }
         $attributes = preg_replace('/\s+t="[^"]*"/', '', $match[1]);
+        if ($style !== null) {
+            $attributes = preg_replace('/\s+s="[^"]*"/', '', $attributes).' s="'.$style.'"';
+        }
         if ($value === null) {
             $content = '';
             $type = '';
@@ -353,6 +388,47 @@ class TravelOrderExportService
         }
 
         return preg_replace($pattern, '<c r="'.$cell.'"'.$attributes.$type.'>'.$content.'</c>', $xml, 1) ?? $xml;
+    }
+
+    private function normalWorksheetView(string $xml): string
+    {
+        return preg_replace_callback('/<sheetView\b([^>]*)>/', function (array $match): string {
+            $attributes = preg_match('/\sview="[^"]*"/', $match[1])
+                ? preg_replace('/\sview="[^"]*"/', ' view="normal"', $match[1], 1)
+                : $match[1].' view="normal"';
+
+            return '<sheetView'.$attributes.'>';
+        }, $xml, 1) ?? $xml;
+    }
+
+    private function expenseVendor(array $expense): string
+    {
+        foreach ([$expense['vendor'] ?? null, $expense['description'] ?? null, $expense['category'] ?? null] as $label) {
+            if (is_string($label) && trim($label) !== '') {
+                return mb_strtoupper(trim($label), 'UTF-8');
+            }
+        }
+
+        return '';
+    }
+
+    private function removeCalculationChain(ZipArchive $zip): void
+    {
+        if ($zip->locateName('xl/calcChain.xml') !== false) {
+            $zip->deleteName('xl/calcChain.xml');
+        }
+
+        $relationships = $zip->getFromName('xl/_rels/workbook.xml.rels');
+        if (is_string($relationships)) {
+            $relationships = preg_replace('/<Relationship\b[^>]*Type="[^"]*\/calcChain"[^>]*\/>/', '', $relationships) ?? $relationships;
+            $zip->addFromString('xl/_rels/workbook.xml.rels', $relationships);
+        }
+
+        $contentTypes = $zip->getFromName('[Content_Types].xml');
+        if (is_string($contentTypes)) {
+            $contentTypes = preg_replace('/<Override\b[^>]*PartName="\/xl\/calcChain\.xml"[^>]*\/>/', '', $contentTypes) ?? $contentTypes;
+            $zip->addFromString('[Content_Types].xml', $contentTypes);
+        }
     }
 
     private function xml(mixed $value): string
