@@ -302,8 +302,8 @@ class TravelOrderExportService
             'lodging' => $lodgingStartRow + $lodgingCount,
             'other' => $otherStartRow + $otherCount,
         ];
-        $allowanceQuantity = round($order->total_hours / 24, 2);
         $allowanceRate = $this->bam($order->daily_allowance_rate_eur);
+        $allowanceQuantity = $allowanceRate > 0 ? round($order->total_hours / 24, 2) : 0.0;
         $allowanceTotal = $this->bam($order->total_allowance_cost);
         $mileageTotal = $this->bam($order->total_km_cost);
         $listedExpensesTotal = $expenses

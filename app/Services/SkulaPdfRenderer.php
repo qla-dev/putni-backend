@@ -22,7 +22,7 @@ class SkulaPdfRenderer
 
     private const MARGIN = 36.0;
 
-    private const CELL_PADDING = 2.5;
+    private const CELL_PADDING = 1.5;
 
     private const DEFAULT_ROW_HEIGHT = 15.0;
 
@@ -176,7 +176,7 @@ class SkulaPdfRenderer
     }
 
     /**
-     * @return array<int, array{size: float, bold: bool, underline: bool, color: string, horizontal: string, vertical: string, wrap: bool, borders: array<string, float>}>
+     * @return array<int, array{size: float, bold: bool, underline: bool, color: string, horizontal: string, wrap: bool, borders: array<string, float>}>
      */
     private function styles(string $xml): array
     {
@@ -219,7 +219,6 @@ class SkulaPdfRenderer
             $alignment = $xpath->query('x:alignment', $format)->item(0);
             $styles[] = $font + [
                 'horizontal' => $alignment instanceof DOMElement ? $alignment->getAttribute('horizontal') : '',
-                'vertical' => $alignment instanceof DOMElement ? $alignment->getAttribute('vertical') : '',
                 'wrap' => $alignment instanceof DOMElement && $alignment->getAttribute('wrapText') === '1',
                 'borders' => $borders[(int) $format->getAttribute('borderId')] ?? [],
             ];
@@ -230,7 +229,7 @@ class SkulaPdfRenderer
 
     /**
      * @param  array{columns: array<int, float>, heights: array<int, float>, cells: array<int, array<int, array{value: string, style: int, numeric: bool, columns: int, rows: int}>>, lastRow: int}  $grid
-     * @param  array<int, array{size: float, bold: bool, underline: bool, color: string, horizontal: string, vertical: string, wrap: bool, borders: array<string, float>}>  $styles
+     * @param  array<int, array{size: float, bold: bool, underline: bool, color: string, horizontal: string, wrap: bool, borders: array<string, float>}>  $styles
      * @param  array<string, string>  $links
      */
     private function paint(array $grid, array $styles, array $links): string
@@ -258,6 +257,7 @@ class SkulaPdfRenderer
                 $annotations = [];
                 $top = self::PAGE_HEIGHT - self::MARGIN;
             }
+            $filled = $this->filled($grid['cells'][$row] ?? []);
             foreach ($grid['cells'][$row] ?? [] as $column => $cell) {
                 $style = $styles[$cell['style']] ?? null;
                 if ($style === null) {
@@ -272,8 +272,9 @@ class SkulaPdfRenderer
                     $cellHeight += ($grid['heights'][$row + $span] ?? self::DEFAULT_ROW_HEIGHT) * $scale;
                 }
                 $left = $offsets[$column] ?? self::MARGIN;
+                $spill = $this->spill($grid['columns'], $filled, $column, $cell['columns'], $style['horizontal'], $scale);
                 $stream .= $this->borders($left, $top, $cellWidth, $cellHeight, $style['borders']);
-                $stream .= $this->text($cell, $style, $left, $top, $cellWidth, $cellHeight, $scale);
+                $stream .= $this->text($cell, $style, $left, $top, $cellWidth, $cellHeight, $scale, $cellWidth + $spill);
                 $reference = $this->reference($column).$row;
                 if (isset($links[$reference])) {
                     $annotations[] = ['url' => $links[$reference], 'rect' => [$left, $top - $cellHeight, $left + $cellWidth, $top]];
@@ -284,6 +285,49 @@ class SkulaPdfRenderer
         $pages[] = ['stream' => $stream, 'annotations' => $annotations];
 
         return $this->document($pages);
+    }
+
+    /**
+     * Columns that actually carry text in a row, so a label may run past its own column into the
+     * blank ones next to it the way Excel does, but never into a neighbour that holds something.
+     *
+     * @param  array<int, array{value: string, style: int, numeric: bool, columns: int, rows: int}>  $cells
+     * @return array<int, bool>
+     */
+    private function filled(array $cells): array
+    {
+        $filled = [];
+        foreach ($cells as $column => $cell) {
+            if (trim($cell['value']) === '') {
+                continue;
+            }
+            for ($span = 0; $span < $cell['columns']; $span++) {
+                $filled[$column + $span] = true;
+            }
+        }
+
+        return $filled;
+    }
+
+    /**
+     * @param  array<int, float>  $columns
+     * @param  array<int, bool>  $filled
+     */
+    private function spill(array $columns, array $filled, int $column, int $span, string $horizontal, float $scale): float
+    {
+        $spill = 0.0;
+        if ($horizontal !== 'right') {
+            for ($next = $column + $span; isset($columns[$next]) && ! isset($filled[$next]); $next++) {
+                $spill += $columns[$next] * $scale;
+            }
+        }
+        if ($horizontal === 'right' || $horizontal === 'center') {
+            for ($previous = $column - 1; isset($columns[$previous]) && ! isset($filled[$previous]); $previous--) {
+                $spill += $columns[$previous] * $scale;
+            }
+        }
+
+        return $spill;
     }
 
     /**
@@ -308,23 +352,24 @@ class SkulaPdfRenderer
 
     /**
      * @param  array{value: string, style: int, numeric: bool, columns: int, rows: int}  $cell
-     * @param  array{size: float, bold: bool, underline: bool, color: string, horizontal: string, vertical: string, wrap: bool, borders: array<string, float>}  $style
+     * @param  array{size: float, bold: bool, underline: bool, color: string, horizontal: string, wrap: bool, borders: array<string, float>}  $style
      */
-    private function text(array $cell, array $style, float $left, float $top, float $width, float $height, float $scale): string
+    private function text(array $cell, array $style, float $left, float $top, float $width, float $height, float $scale, float $limit): string
     {
         if (trim($cell['value']) === '') {
             return '';
         }
         $size = $style['size'] * $scale;
         $font = $style['bold'] ? 'F2' : 'F1';
-        $available = $width - 2 * self::CELL_PADDING;
+        $available = $limit - 2 * self::CELL_PADDING;
         $lines = [];
         foreach (preg_split('/\R/u', $cell['value']) ?: [] as $paragraph) {
             $lines = array_merge($lines, $style['wrap'] ? $this->wrap($paragraph, $size, $style['bold'], $available) : [$this->encode($paragraph)]);
         }
         $leading = $size * 1.2;
+        $lines = $this->crop($lines, $size, $style['bold'], $available, max(1, (int) floor($height / $leading)));
         $block = count($lines) * $leading;
-        $vertical = $style['vertical'] === 'center' ? $top - ($height - $block) / 2 : $top - $height + $block + self::CELL_PADDING;
+        $vertical = $top - $height + $block - $leading + $size * 0.85 + self::CELL_PADDING;
         $horizontal = $style['horizontal'] !== '' ? $style['horizontal'] : ($cell['numeric'] ? 'right' : 'left');
 
         $stream = "BT\n/{$font} ".sprintf('%.2F', $size)." Tf\n".$this->color($style['color']);
@@ -344,6 +389,33 @@ class SkulaPdfRenderer
         }
 
         return $stream."ET\n".$underlines.($style['color'] !== '000000' ? "0 0 0 RG 0 0 0 rg\n" : '');
+    }
+
+    /**
+     * Keeps the text inside its own cell: no more lines than the row is tall, and nothing wider
+     * than the column, so a long vendor name is cut back to an ellipsis instead of spilling over.
+     *
+     * @param  array<int, string>  $lines
+     * @return array<int, string>
+     */
+    private function crop(array $lines, float $size, bool $bold, float $available, int $maximum): array
+    {
+        $cropped = array_slice($lines, 0, $maximum);
+        if (count($lines) > $maximum) {
+            $cropped[array_key_last($cropped)] = implode(' ', array_slice($lines, $maximum - 1));
+        }
+        foreach ($cropped as $index => $line) {
+            if ($this->width($line, $size, $bold) <= $available) {
+                continue;
+            }
+            $ellipsis = $this->width('...', $size, $bold);
+            while ($line !== '' && $this->width($line, $size, $bold) + $ellipsis > $available) {
+                $line = substr($line, 0, -1);
+            }
+            $cropped[$index] = rtrim($line).'...';
+        }
+
+        return $cropped;
     }
 
     /**
@@ -504,7 +576,7 @@ class SkulaPdfRenderer
         $objects[] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding 5 0 R >>';
         $objects[] = '<< /Type /Encoding /BaseEncoding /WinAnsiEncoding /Differences [127 /Dcroat 129 /ccaron 141 /Ccaron 143 /cacute 144 /Cacute 157 /dcroat] >>';
 
-        $kids = []; 
+        $kids = [];
         foreach ($pages as $page) {
             $references = [];
             foreach ($page['annotations'] as $annotation) {
