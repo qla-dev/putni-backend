@@ -17,6 +17,11 @@ class TravelOrderExportService
 {
     private const BAM_RATE = 1.95583;
 
+    private const TRANSLITERATIONS = [
+        'č' => 'c', 'ć' => 'c', 'đ' => 'd', 'š' => 's', 'ž' => 'z',
+        'Č' => 'C', 'Ć' => 'C', 'Đ' => 'D', 'Š' => 'S', 'Ž' => 'Z',
+    ];
+
     public function generate(TravelOrder $order, ExportFormat $format, string $currency = 'BAM', bool $includeImages = false): array
     {
         $content = match ($format->handler) {
@@ -104,19 +109,24 @@ class TravelOrderExportService
 
     private function filename(ExportFormat $format, TravelOrder $order): string
     {
-        $prefix = match ($format->name) {
-            'pdf' => 'Putni_nalog',
-            'pantheon' => 'Pantheon',
-            'spica' => 'Spica',
-            'option' => 'OptionERP',
-            'skula' => 'SKULA',
-            'infonet' => 'Infonet_infoERP',
-            'dynamics' => 'Dynamics365',
-            default => $format->name,
-        };
-        $number = preg_replace('/[^\pL\pN_.-]+/u', '_', $order->order_number);
+        $parts = array_filter([
+            $this->filenamePart($order->employee_name),
+            $this->filenamePart($order->order_number),
+        ]);
 
-        return "{$prefix}_{$number}.{$format->extension}";
+        return implode('_', $parts).'.'.$format->extension;
+    }
+
+    /**
+     * Downloads travel further than our alphabet does, so the parts are folded to plain ASCII
+     * before anything outside a safe filename is collapsed into single underscores.
+     */
+    private function filenamePart(?string $value): string
+    {
+        $ascii = strtr((string) $value, self::TRANSLITERATIONS);
+        $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $ascii) ?: $ascii;
+
+        return trim((string) preg_replace('/[^A-Za-z0-9.-]+/', '_', $ascii), '_');
     }
 
     private function pdf(TravelOrder $order): string
