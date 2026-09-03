@@ -657,8 +657,11 @@ class TravelOrderExportService
 
     private function companyLines(TravelOrder $order): array
     {
-        $company = null;
-        if (trim((string) $order->company_oib) !== '') {
+        // The company the order owner belongs to right now wins: the name and OIB stored on the
+        // order are a snapshot from when it was created and go stale as soon as the user moves
+        // to another company or fills their details in later.
+        $company = $order->user?->companies()->first();
+        if (! $company && trim((string) $order->company_oib) !== '') {
             $company = Company::query()->where('oib', $order->company_oib)->first();
         }
         if (! $company && trim((string) $order->company_name) !== '') {
@@ -671,7 +674,7 @@ class TravelOrderExportService
             trim((string) $company?->city),
         ])));
         $country = trim((string) $company?->country);
-        $details = $address !== '' ? $address : 'OIB: '.trim((string) $order->company_oib);
+        $details = $address !== '' ? $address : 'OIB: '.trim((string) ($company?->oib ?: $order->company_oib));
 
         return [$name, $details, $country];
     }
