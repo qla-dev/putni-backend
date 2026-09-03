@@ -2,9 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\Company;
 use App\Models\ExportFormat;
 use App\Models\TravelOrder;
 use DateTimeInterface;
+use DOMDocument;
+use DOMElement;
+use DOMXPath;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use ZipArchive;
@@ -295,18 +299,53 @@ class TravelOrderExportService
         throw_unless($temporary !== false && copy($template, $temporary), new RuntimeException('SKULA export could not be prepared.'));
         $zip = new ZipArchive;
         throw_unless($zip->open($temporary) === true, new RuntimeException('SKULA export archive is invalid.'));
+        $companyStyle = $this->addCompanyStyle($zip);
         $xml = $zip->getFromName('xl/worksheets/sheet1.xml');
         throw_unless(is_string($xml), new RuntimeException('SKULA worksheet is missing.'));
-        $xml = $this->normalWorksheetView($xml);
 
-        $expenseRows = [14, 15, 16, 17, 20, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33];
         $expenses = collect($order->expenses)->values();
+        $expenseGroups = $this->groupSkulaExpenses($expenses->all());
+        $transportCount = count($expenseGroups['transport']);
+        $transportRowDelta = $transportCount - 4;
+        if ($transportRowDelta > 0) {
+            $xml = $this->insertWorksheetRows($xml, 18, $transportRowDelta, 15);
+        } elseif ($transportRowDelta < 0) {
+            $xml = $this->removeWorksheetRows($xml, 14 + $transportCount, -$transportRowDelta);
+        }
+        $lodgingCount = count($expenseGroups['lodging']);
+        $lodgingRowDelta = $lodgingCount - 3;
+        $lodgingStartRow = 20 + $transportRowDelta;
+        $lodgingTotalRow = 23 + $transportRowDelta;
+        if ($lodgingRowDelta > 0) {
+            $xml = $this->insertWorksheetRows($xml, $lodgingTotalRow, $lodgingRowDelta, 21 + $transportRowDelta);
+        } elseif ($lodgingRowDelta < 0) {
+            $xml = $this->removeWorksheetRows($xml, $lodgingStartRow + $lodgingCount, -$lodgingRowDelta);
+        }
+        $otherCount = count($expenseGroups['other']);
+        $otherRowDelta = $otherCount - 9;
+        $otherStartRow = 25 + $transportRowDelta + $lodgingRowDelta;
+        $otherTotalRow = 34 + $transportRowDelta + $lodgingRowDelta;
+        if ($otherRowDelta > 0) {
+            $xml = $this->insertWorksheetRows($xml, $otherTotalRow, $otherRowDelta, $otherTotalRow - 2);
+        } elseif ($otherRowDelta < 0) {
+            $xml = $this->removeWorksheetRows($xml, $otherStartRow + $otherCount, -$otherRowDelta);
+        }
+        $rowDelta = $transportRowDelta + $lodgingRowDelta + $otherRowDelta;
+        $sectionRows = [
+            'transport' => $transportCount > 0 ? range(14, 13 + $transportCount) : [],
+            'lodging' => $lodgingCount > 0 ? range($lodgingStartRow, $lodgingStartRow + $lodgingCount - 1) : [],
+            'other' => $otherCount > 0 ? range($otherStartRow, $otherStartRow + $otherCount - 1) : [],
+        ];
+        $sectionTotalRows = [
+            'transport' => 14 + $transportCount,
+            'lodging' => $lodgingStartRow + $lodgingCount,
+            'other' => $otherStartRow + $otherCount,
+        ];
         $allowanceQuantity = round($order->total_hours / 24, 2);
         $allowanceRate = $this->bam($order->daily_allowance_rate_eur);
         $allowanceTotal = $this->bam($order->total_allowance_cost);
         $mileageTotal = $this->bam($order->total_km_cost);
         $listedExpensesTotal = $expenses
-            ->take(count($expenseRows))
             ->sum(fn (array $expense): float => $this->bam((float) ($expense['amountInEur'] ?? 0)));
         $advance = $this->bam($order->advancement_paid);
         $expenseTotal = round($allowanceTotal + $mileageTotal + $listedExpensesTotal, 2);
@@ -321,42 +360,45 @@ class TravelOrderExportService
             'C6' => "{$order->total_hours} SATI",
             'A9' => 1,
             'B9' => 'DNEVNICA',
-            'C9' => $allowanceQuantity,
-            'D9' => $allowanceRate,
-            'E9' => $allowanceTotal,
-            'E12' => $allowanceTotal,
-            'E35' => $expenseTotal,
-            'E36' => $advance,
-            'E37' => max($balance, 0),
-            'E38' => max(-$balance, 0),
-            'C40' => $this->date(now()),
-            'B45' => $order->employee_name,
-            'C45' => $order->approved_by,
+            'C9' => $this->skulaDecimal($allowanceQuantity),
+            'D9' => $this->skulaDecimal($allowanceRate),
+            'E9' => $this->skulaAmount($allowanceTotal),
+            'E12' => $this->skulaAmount($allowanceTotal),
+            'E'.(35 + $rowDelta) => $this->skulaAmount($expenseTotal),
+            'E'.(36 + $rowDelta) => $this->skulaAmount($advance),
+            'E'.(37 + $rowDelta) => $this->skulaAmount(max($balance, 0)),
+            'E'.(38 + $rowDelta) => $this->skulaAmount(max(-$balance, 0)),
+            'C'.(40 + $rowDelta) => $this->date(now()),
+            'B'.(45 + $rowDelta) => $order->employee_name,
+            'C'.(45 + $rowDelta) => $order->approved_by,
         ];
         foreach ($replacements as $cell => $value) {
-            $style = match ($cell) {
-                'C9', 'D9' => 91,
-                'E9', 'E12', 'E35', 'E36', 'E37', 'E38' => 90,
-                default => null,
-            };
+            $style = null;
+            if (in_array($cell, ['C9', 'D9'], true)) {
+                $style = 91;
+            } elseif (str_starts_with($cell, 'E') && ! in_array($cell, ['E3', 'E4', 'E5'], true)) {
+                $style = 90;
+            }
             $xml = $this->replaceCell($xml, $cell, $value, $style);
         }
-        foreach ($expenseRows as $index => $row) {
-            $expense = $expenses->get($index);
-            $amount = $expense ? $this->bam((float) ($expense['amountInEur'] ?? 0)) : null;
-            $xml = $this->replaceCell($xml, "A{$row}", $expense ? $index + 1 : null);
-            $xml = $this->replaceCell($xml, "B{$row}", $expense ? $this->expenseVendor($expense) : null);
-            $xml = $this->replaceCell($xml, "C{$row}", $expense ? 1 : null, 91);
-            $xml = $this->replaceCell($xml, "D{$row}", $amount, 91);
-            $xml = $this->replaceCell($xml, "E{$row}", $amount ?? 0, 90);
-        }
-        foreach ([18 => [0, 4], 23 => [4, 3], 34 => [7, 9]] as $row => [$offset, $length]) {
-            $sectionTotal = $expenses
-                ->slice($offset, $length)
+        $sequence = 1;
+        foreach ($sectionRows as $section => $rows) {
+            foreach ($rows as $index => $row) {
+                $expense = $expenseGroups[$section][$index] ?? null;
+                $amount = $expense ? $this->bam((float) ($expense['amountInEur'] ?? 0)) : null;
+                $xml = $this->replaceCell($xml, "A{$row}", $expense ? $sequence++ : null);
+                $xml = $this->replaceCell($xml, "B{$row}", $expense ? $this->expenseVendor($expense) : null, null, 9);
+                $xml = $this->replaceCell($xml, "C{$row}", $expense ? 1 : null, 91);
+                $xml = $this->replaceCell($xml, "D{$row}", $amount === null ? null : $this->skulaDecimal($amount), 91);
+                $xml = $this->replaceCell($xml, "E{$row}", $this->skulaAmount($amount ?? 0), 90);
+            }
+            $sectionTotal = collect($expenseGroups[$section])
                 ->sum(fn (array $expense): float => $this->bam((float) ($expense['amountInEur'] ?? 0)));
-            $xml = $this->replaceCell($xml, "E{$row}", round($sectionTotal, 2), 90);
+            $xml = $this->replaceCell($xml, 'E'.$sectionTotalRows[$section], $this->skulaAmount(round($sectionTotal, 2)), 90);
         }
+        $xml = $this->prepareWorksheetLayout($xml, $this->companyLines($order), $companyStyle, 48 + $rowDelta);
         $zip->addFromString('xl/worksheets/sheet1.xml', $xml);
+        $this->updatePrintArea($zip, 48 + $rowDelta);
         $this->removeCalculationChain($zip);
         $zip->close();
         $content = file_get_contents($temporary);
@@ -366,7 +408,14 @@ class TravelOrderExportService
         return $content;
     }
 
-    private function replaceCell(string $xml, string $cell, string|int|float|null $value, ?int $style = null): string
+    private function replaceCell(
+        string $xml,
+        string $cell,
+        string|int|float|null $value,
+        ?int $style = null,
+        ?int $fontSize = null,
+        bool $bold = false,
+    ): string
     {
         $pattern = '/<c r="'.preg_quote($cell, '/').'"([^>]*?)(?:\s*\/>|>.*?<\/c>)/s';
         if (! preg_match($pattern, $xml, $match)) {
@@ -383,22 +432,274 @@ class TravelOrderExportService
             $content = '<v>'.$value.'</v>';
             $type = '';
         } else {
-            $content = '<is><t xml:space="preserve">'.$this->xml((string) $value).'</t></is>';
+            $text = '<t xml:space="preserve">'.$this->xml((string) $value).'</t>';
+            if ($fontSize !== null || $bold) {
+                $runProperties = '<rPr>'.($bold ? '<b/>' : '').($fontSize !== null ? '<sz val="'.$fontSize.'"/>' : '').'<rFont val="Calibri"/><family val="2"/></rPr>';
+                $content = '<is><r>'.$runProperties.$text.'</r></is>';
+            } else {
+                $content = '<is>'.$text.'</is>';
+            }
             $type = ' t="inlineStr"';
         }
 
         return preg_replace($pattern, '<c r="'.$cell.'"'.$attributes.$type.'>'.$content.'</c>', $xml, 1) ?? $xml;
     }
 
-    private function normalWorksheetView(string $xml): string
+    private function groupSkulaExpenses(array $expenses): array
     {
-        return preg_replace_callback('/<sheetView\b([^>]*)>/', function (array $match): string {
+        $groups = ['transport' => [], 'lodging' => [], 'other' => []];
+        $transportCategories = [
+            'gorivo', 'rent-a-car', 'cestarina', 'parking', 'mostarina', 'tunelarina',
+            'vinjeta', 'trajekt', 'avionska karta', 'autobuska karta', 'vozna karta', 'prijevozna karta',
+        ];
+        $lodgingCategories = ['smještaj', 'smjestaj', 'hotel', 'noćenje', 'nocenje'];
+
+        foreach ($expenses as $expense) {
+            if (! is_array($expense)) {
+                continue;
+            }
+            $category = mb_strtolower(trim((string) ($expense['category'] ?? '')), 'UTF-8');
+            $section = in_array($category, $lodgingCategories, true)
+                ? 'lodging'
+                : (in_array($category, $transportCategories, true) ? 'transport' : 'other');
+            $groups[$section][] = $expense;
+        }
+
+        return $groups;
+    }
+
+    private function insertWorksheetRows(string $xml, int $beforeRow, int $count, int $templateRow): string
+    {
+        if ($count < 1) {
+            return $xml;
+        }
+
+        $document = new DOMDocument;
+        throw_unless($document->loadXML($xml), new RuntimeException('SKULA worksheet XML is invalid.'));
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('x', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+        $template = $xpath->query("/x:worksheet/x:sheetData/x:row[@r='{$templateRow}']")->item(0);
+        throw_unless($template instanceof DOMElement, new RuntimeException('SKULA expense row template is missing.'));
+        $template = $template->cloneNode(true);
+
+        foreach ($xpath->query('/x:worksheet/x:sheetData/x:row') as $row) {
+            if (! $row instanceof DOMElement || (int) $row->getAttribute('r') < $beforeRow) {
+                continue;
+            }
+            $newRow = (int) $row->getAttribute('r') + $count;
+            $row->setAttribute('r', (string) $newRow);
+            foreach ($xpath->query('x:c', $row) as $cell) {
+                if ($cell instanceof DOMElement && preg_match('/^([A-Z]+)\d+$/', $cell->getAttribute('r'), $match)) {
+                    $cell->setAttribute('r', $match[1].$newRow);
+                }
+            }
+        }
+
+        foreach ($xpath->query('/x:worksheet/x:mergeCells/x:mergeCell') as $merge) {
+            if (! $merge instanceof DOMElement || ! preg_match('/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/', $merge->getAttribute('ref'), $match)) {
+                continue;
+            }
+            $start = (int) $match[2];
+            $end = (int) $match[4];
+            if ($start >= $beforeRow) {
+                $start += $count;
+                $end += $count;
+            } elseif ($end >= $beforeRow) {
+                $end += $count;
+            }
+            $merge->setAttribute('ref', $match[1].$start.':'.$match[3].$end);
+        }
+
+        foreach ($xpath->query('/x:worksheet/x:rowBreaks/x:brk') as $break) {
+            if ($break instanceof DOMElement && (int) $break->getAttribute('id') >= $beforeRow) {
+                $break->setAttribute('id', (string) ((int) $break->getAttribute('id') + $count));
+            }
+        }
+
+        $reference = $xpath->query('/x:worksheet/x:sheetData/x:row[@r="'.($beforeRow + $count).'"]')->item(0);
+        throw_unless($reference instanceof DOMElement, new RuntimeException('SKULA row insertion point is missing.'));
+        for ($index = 0; $index < $count; $index++) {
+            $newRowNumber = $beforeRow + $index;
+            $newRow = $template->cloneNode(true);
+            $newRow->setAttribute('r', (string) $newRowNumber);
+            foreach ($xpath->query('x:c', $newRow) as $cell) {
+                if (! $cell instanceof DOMElement || ! preg_match('/^([A-Z]+)\d+$/', $cell->getAttribute('r'), $match)) {
+                    continue;
+                }
+                $cell->setAttribute('r', $match[1].$newRowNumber);
+                while ($cell->firstChild) {
+                    $cell->removeChild($cell->firstChild);
+                }
+            }
+            $reference->parentNode->insertBefore($newRow, $reference);
+        }
+
+        return $document->saveXML($document->documentElement) ?: $xml;
+    }
+
+    private function removeWorksheetRows(string $xml, int $startRow, int $count): string
+    {
+        if ($count < 1) {
+            return $xml;
+        }
+
+        $document = new DOMDocument;
+        throw_unless($document->loadXML($xml), new RuntimeException('SKULA worksheet XML is invalid.'));
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('x', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+        $endRow = $startRow + $count - 1;
+        $rows = [];
+        foreach ($xpath->query('/x:worksheet/x:sheetData/x:row') as $row) {
+            if ($row instanceof DOMElement) {
+                $rows[] = $row;
+            }
+        }
+        foreach ($rows as $row) {
+            $number = (int) $row->getAttribute('r');
+            if ($number >= $startRow && $number <= $endRow) {
+                $row->parentNode->removeChild($row);
+
+                continue;
+            }
+            if ($number <= $endRow) {
+                continue;
+            }
+            $newRow = $number - $count;
+            $row->setAttribute('r', (string) $newRow);
+            foreach ($xpath->query('x:c', $row) as $cell) {
+                if ($cell instanceof DOMElement && preg_match('/^([A-Z]+)\d+$/', $cell->getAttribute('r'), $match)) {
+                    $cell->setAttribute('r', $match[1].$newRow);
+                }
+            }
+        }
+
+        $removedMerges = 0;
+        $merges = [];
+        foreach ($xpath->query('/x:worksheet/x:mergeCells/x:mergeCell') as $merge) {
+            if ($merge instanceof DOMElement) {
+                $merges[] = $merge;
+            }
+        }
+        foreach ($merges as $merge) {
+            if (! preg_match('/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/', $merge->getAttribute('ref'), $match)) {
+                continue;
+            }
+            $start = (int) $match[2];
+            $end = (int) $match[4];
+            if ($start >= $startRow && $end <= $endRow) {
+                $merge->parentNode->removeChild($merge);
+                $removedMerges++;
+
+                continue;
+            }
+            if ($start > $endRow) {
+                $start -= $count;
+                $end -= $count;
+            } elseif ($end > $endRow) {
+                $end -= $count;
+            }
+            $merge->setAttribute('ref', $match[1].$start.':'.$match[3].$end);
+        }
+        if ($removedMerges > 0) {
+            $mergeCells = $xpath->query('/x:worksheet/x:mergeCells')->item(0);
+            if ($mergeCells instanceof DOMElement) {
+                $mergeCells->setAttribute('count', (string) ((int) $mergeCells->getAttribute('count') - $removedMerges));
+            }
+        }
+
+        foreach ($xpath->query('/x:worksheet/x:rowBreaks/x:brk') as $break) {
+            if ($break instanceof DOMElement && (int) $break->getAttribute('id') > $endRow) {
+                $break->setAttribute('id', (string) ((int) $break->getAttribute('id') - $count));
+            }
+        }
+
+        return $document->saveXML($document->documentElement) ?: $xml;
+    }
+
+    private function prepareWorksheetLayout(string $xml, array $companyLines, int $companyStyle, int $lastRow): string
+    {
+        $xml = preg_replace_callback('/<sheetView\b([^>]*)>/', function (array $match): string {
             $attributes = preg_match('/\sview="[^"]*"/', $match[1])
                 ? preg_replace('/\sview="[^"]*"/', ' view="normal"', $match[1], 1)
                 : $match[1].' view="normal"';
 
             return '<sheetView'.$attributes.'>';
         }, $xml, 1) ?? $xml;
+
+        $xml = preg_replace('/<c r="F\d+"[^>]*?(?:\s*\/>|>.*?<\/c>)/s', '', $xml) ?? $xml;
+        $xml = preg_replace(
+            '/<col min="6" max="16384"([^>]*)\/>/',
+            '<col min="6" max="16384" width="0" hidden="1" customWidth="1"/>',
+            $xml,
+            1,
+        ) ?? $xml;
+        $xml = preg_replace_callback('/<row r="(\d+)"/', fn (array $match): string => '<row r="'.((int) $match[1] + 3).'"', $xml) ?? $xml;
+        $xml = preg_replace_callback('/<c r="([A-Z]+)(\d+)"/', fn (array $match): string => '<c r="'.$match[1].((int) $match[2] + 3).'"', $xml) ?? $xml;
+        $xml = preg_replace_callback('/<mergeCell ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"\/>/', fn (array $match): string => '<mergeCell ref="'.$match[1].((int) $match[2] + 3).':'.$match[3].((int) $match[4] + 3).'"/>', $xml) ?? $xml;
+        $xml = preg_replace('/<dimension ref="[^"]+"\/>/', '<dimension ref="A1:E'.$lastRow.'"/>', $xml, 1) ?? $xml;
+
+        $companyRows = '';
+        foreach (array_values(array_pad(array_slice($companyLines, 0, 3), 3, '')) as $index => $line) {
+            $row = $index + 1;
+            $companyRows .= '<row r="'.$row.'" spans="1:5" ht="12" customHeight="1"><c r="A'.$row.'" s="'.$companyStyle.'" t="inlineStr"><is><r><rPr><b/><sz val="8"/><rFont val="Calibri"/><family val="2"/></rPr><t xml:space="preserve">'.$this->xml($line).'</t></r></is></c></row>';
+        }
+        $xml = str_replace('<sheetData>', '<sheetData>'.$companyRows, $xml);
+        $xml = preg_replace_callback('/<mergeCells count="(\d+)">/', fn (array $match): string => '<mergeCells count="'.((int) $match[1] + 3).'"><mergeCell ref="A1:B1"/><mergeCell ref="A2:B2"/><mergeCell ref="A3:B3"/>', $xml, 1) ?? $xml;
+        $xml = $this->replaceCell($xml, 'A4', 'OBRAČUN TROŠKOVA SLUŽBENOG PUTOVANJA', 74);
+
+        return $xml;
+    }
+
+    private function addCompanyStyle(ZipArchive $zip): int
+    {
+        $styles = $zip->getFromName('xl/styles.xml');
+        throw_unless(is_string($styles), new RuntimeException('SKULA styles are missing.'));
+        throw_unless(preg_match('/<cellXfs count="(\d+)">/', $styles, $match) === 1, new RuntimeException('SKULA cell styles are invalid.'));
+
+        $styleIndex = (int) $match[1];
+        $styles = preg_replace('/<cellXfs count="\d+">/', '<cellXfs count="'.($styleIndex + 1).'">', $styles, 1) ?? $styles;
+        $companyStyle = '<xf numFmtId="0" fontId="10" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>';
+        $styles = str_replace('</cellXfs>', $companyStyle.'</cellXfs>', $styles);
+        $zip->addFromString('xl/styles.xml', $styles);
+
+        return $styleIndex;
+    }
+
+    private function companyLines(TravelOrder $order): array
+    {
+        $company = null;
+        if (trim((string) $order->company_oib) !== '') {
+            $company = Company::query()->where('oib', $order->company_oib)->first();
+        }
+        if (! $company && trim((string) $order->company_name) !== '') {
+            $company = Company::query()->where('name', $order->company_name)->first();
+        }
+
+        $name = trim((string) ($company?->name ?: $order->company_name));
+        $address = trim(implode(', ', array_filter([
+            trim((string) $company?->address),
+            trim((string) $company?->city),
+        ])));
+        $country = trim((string) $company?->country);
+        $details = $address !== '' ? $address : 'OIB: '.trim((string) $order->company_oib);
+
+        return [$name, $details, $country];
+    }
+
+    private function updatePrintArea(ZipArchive $zip, int $lastRow): void
+    {
+        $workbook = $zip->getFromName('xl/workbook.xml');
+        if (! is_string($workbook)) {
+            return;
+        }
+
+        $workbook = preg_replace_callback(
+            '/\$A\$\d+:\$[A-Z]+\$\d+/',
+            fn (): string => '$A$1:$E$'.$lastRow,
+            $workbook,
+            1,
+        ) ?? $workbook;
+        $zip->addFromString('xl/workbook.xml', $workbook);
     }
 
     private function expenseVendor(array $expense): string
@@ -456,6 +757,16 @@ class TravelOrderExportService
     private function bam(float $value): float
     {
         return round($value * self::BAM_RATE, 2);
+    }
+
+    private function skulaDecimal(float $value): string
+    {
+        return number_format($value, 2, ',', '.');
+    }
+
+    private function skulaAmount(float $value): string
+    {
+        return $this->skulaDecimal($value).' KM';
     }
 
     private function date(DateTimeInterface $date): string

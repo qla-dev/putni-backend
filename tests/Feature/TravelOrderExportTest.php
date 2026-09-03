@@ -62,6 +62,18 @@ class TravelOrderExportTest extends TestCase
         $this->seed(ExportFormatSeeder::class);
         $user = User::factory()->create();
         $order = $user->travelOrders()->create($this->orderData());
+        $expenses = $order->expenses;
+        $expenses[] = [
+            'id' => 'expense-2',
+            'category' => 'Smještaj',
+            'description' => 'Račun',
+            'vendor' => 'Test Hotel',
+            'receiptNumber' => 'H-1',
+            'date' => '2026-07-20',
+            'amountInEur' => 10,
+            'paymentMethod' => 'Kartica',
+        ];
+        $order->update(['expenses' => $expenses]);
 
         $content = $this->withToken($user->createToken('test')->plainTextToken)
             ->get("/api/travel-orders/{$order->client_id}/exports/skula")
@@ -81,10 +93,17 @@ class TravelOrderExportTest extends TestCase
         $this->assertIsString($sheet);
         $this->assertStringContainsString('view="normal"', $sheet);
         $this->assertStringNotContainsString('pageBreakPreview', $sheet);
-        $this->assertStringContainsString('<c r="B14" s="27" t="inlineStr"><is><t xml:space="preserve">TEST OIL</t></is></c>', $sheet);
-        $this->assertMatchesRegularExpression('/<c r="C14" s="91"><v>1<\/v><\/c>/', $sheet);
-        $this->assertMatchesRegularExpression('/<c r="D14" s="91"><v>97\.79<\/v><\/c>/', $sheet);
-        $this->assertMatchesRegularExpression('/<c r="E14" s="90"><v>97\.79<\/v><\/c>/', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="A1" s="\d+" t="inlineStr">.*TEST D\.O\.O\..*<\/c>/s', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="A2" s="\d+" t="inlineStr">.*OIB: 98765432109.*<\/c>/s', $sheet);
+        $this->assertStringContainsString('<mergeCell ref="A1:B1"/><mergeCell ref="A2:B2"/><mergeCell ref="A3:B3"/>', $sheet);
+        $this->assertStringContainsString('<mergeCell ref="A4:E4"/>', $sheet);
+        $this->assertStringContainsString('<col min="6" max="16384" width="0" hidden="1" customWidth="1"/>', $sheet);
+        $this->assertStringNotContainsString('r="F26"', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="B17"[^>]*>.*<sz val="9"\/>.*TEST OIL.*<\/c>/s', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="B20"[^>]*>.*TEST HOTEL.*<\/c>/s', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="C17" s="91"><v>1<\/v><\/c>/', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="D17" s="91" t="inlineStr">.*97,79.*<\/c>/s', $sheet);
+        $this->assertMatchesRegularExpression('/<c r="E17" s="90" t="inlineStr">.*97,79 KM.*<\/c>/s', $sheet);
         $this->assertFalse($zip->locateName('xl/calcChain.xml'));
         $this->assertIsString($relationships);
         $this->assertStringNotContainsString('calcChain', $relationships);
