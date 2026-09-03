@@ -299,7 +299,8 @@ class TravelOrderExportService
         throw_unless($temporary !== false && copy($template, $temporary), new RuntimeException('SKULA export could not be prepared.'));
         $zip = new ZipArchive;
         throw_unless($zip->open($temporary) === true, new RuntimeException('SKULA export archive is invalid.'));
-        $companyStyle = $this->addCompanyStyle($zip);
+        $headerStyles = $this->addHeaderStyles($zip);
+        $appLinkRelation = $this->addAppLinkRelation($zip);
         $xml = $zip->getFromName('xl/worksheets/sheet1.xml');
         throw_unless(is_string($xml), new RuntimeException('SKULA worksheet is missing.'));
 
@@ -352,7 +353,8 @@ class TravelOrderExportService
         $balance = $this->bam($order->balance_to_pay);
         $replacements = [
             'C3' => mb_strtoupper($order->employee_name, 'UTF-8'),
-            'E3' => "Broj službenog naloga:                       {$order->order_number}",
+            'E3' => "Broj službenog naloga:
+{$order->order_number}",
             'C4' => $this->date($order->departure_time),
             'E4' => $order->departure_time->format('H:i'),
             'C5' => $this->date($order->arrival_time),
@@ -396,7 +398,7 @@ class TravelOrderExportService
                 ->sum(fn (array $expense): float => $this->bam((float) ($expense['amountInEur'] ?? 0)));
             $xml = $this->replaceCell($xml, 'E'.$sectionTotalRows[$section], $this->skulaAmount(round($sectionTotal, 2)), 90);
         }
-        $xml = $this->prepareWorksheetLayout($xml, $this->companyLines($order), $companyStyle, 48 + $rowDelta);
+        $xml = $this->prepareWorksheetLayout($xml, $this->companyLines($order), $headerStyles, $appLinkRelation, 48 + $rowDelta);
         $zip->addFromString('xl/worksheets/sheet1.xml', $xml);
         $this->updatePrintArea($zip, 48 + $rowDelta);
         $this->removeCalculationChain($zip);
@@ -616,7 +618,7 @@ class TravelOrderExportService
         return $document->saveXML($document->documentElement) ?: $xml;
     }
 
-    private function prepareWorksheetLayout(string $xml, array $companyLines, int $companyStyle, int $lastRow): string
+    private function prepareWorksheetLayout(string $xml, array $companyLines, array $headerStyles, string $appLinkRelation, int $lastRow): string
     {
         $xml = preg_replace_callback('/<sheetView\b([^>]*)>/', function (array $match): string {
             $attributes = preg_match('/\sview="[^"]*"/', $match[1])
@@ -638,31 +640,60 @@ class TravelOrderExportService
         $xml = preg_replace_callback('/<mergeCell ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"\/>/', fn (array $match): string => '<mergeCell ref="'.$match[1].((int) $match[2] + 3).':'.$match[3].((int) $match[4] + 3).'"/>', $xml) ?? $xml;
         $xml = preg_replace('/<dimension ref="[^"]+"\/>/', '<dimension ref="A1:E'.$lastRow.'"/>', $xml, 1) ?? $xml;
 
+        $appLines = ['Odrađeno sa aplikacijom', 'Putni nalozi - AI unos troška'];
         $companyRows = '';
         foreach (array_values(array_pad(array_slice($companyLines, 0, 3), 3, '')) as $index => $line) {
             $row = $index + 1;
-            $companyRows .= '<row r="'.$row.'" spans="1:5" ht="12" customHeight="1"><c r="A'.$row.'" s="'.$companyStyle.'" t="inlineStr"><is><r><rPr><b/><sz val="8"/><rFont val="Calibri"/><family val="2"/></rPr><t xml:space="preserve">'.$this->xml($line).'</t></r></is></c></row>';
+            $companyRows .= '<row r="'.$row.'" spans="1:5" ht="12" customHeight="1"><c r="A'.$row.'" s="'.$headerStyles['company'].'" t="inlineStr"><is><r><rPr><b/><sz val="8"/><rFont val="Calibri"/><family val="2"/></rPr><t xml:space="preserve">'.$this->xml($line).'</t></r></is></c>';
+            $appLine = $appLines[$index] ?? null;
+            if ($appLine !== null) {
+                $style = $index === count($appLines) - 1 ? $headerStyles['link'] : $headerStyles['note'];
+                $companyRows .= '<c r="D'.$row.'" s="'.$style.'" t="inlineStr"><is><t xml:space="preserve">'.$this->xml($appLine).'</t></is></c><c r="E'.$row.'" s="'.$style.'"/>';
+            }
+            $companyRows .= '</row>';
         }
         $xml = str_replace('<sheetData>', '<sheetData>'.$companyRows, $xml);
-        $xml = preg_replace_callback('/<mergeCells count="(\d+)">/', fn (array $match): string => '<mergeCells count="'.((int) $match[1] + 3).'"><mergeCell ref="A1:B1"/><mergeCell ref="A2:B2"/><mergeCell ref="A3:B3"/>', $xml, 1) ?? $xml;
+        $xml = preg_replace_callback('/<mergeCells count="(\d+)">/', fn (array $match): string => '<mergeCells count="'.((int) $match[1] + 5).'"><mergeCell ref="A1:B1"/><mergeCell ref="A2:B2"/><mergeCell ref="A3:B3"/><mergeCell ref="D1:E1"/><mergeCell ref="D2:E2"/>', $xml, 1) ?? $xml;
+        $xml = str_replace('<pageMargins', '<hyperlinks><hyperlink ref="D2:E2" r:id="'.$appLinkRelation.'"/></hyperlinks><pageMargins', $xml);
         $xml = $this->replaceCell($xml, 'A4', 'OBRAČUN TROŠKOVA SLUŽBENOG PUTOVANJA', 74);
 
         return $xml;
     }
 
-    private function addCompanyStyle(ZipArchive $zip): int
+    private function addHeaderStyles(ZipArchive $zip): array
     {
         $styles = $zip->getFromName('xl/styles.xml');
         throw_unless(is_string($styles), new RuntimeException('SKULA styles are missing.'));
         throw_unless(preg_match('/<cellXfs count="(\d+)">/', $styles, $match) === 1, new RuntimeException('SKULA cell styles are invalid.'));
+        throw_unless(preg_match('/<fonts count="(\d+)"/', $styles, $fontMatch) === 1, new RuntimeException('SKULA fonts are invalid.'));
+
+        $fontIndex = (int) $fontMatch[1];
+        $styles = preg_replace('/<fonts count="\d+"/', '<fonts count="'.($fontIndex + 1).'"', $styles, 1) ?? $styles;
+        $linkFont = '<font><u/><sz val="8"/><color rgb="FF0563C1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>';
+        $styles = str_replace('</fonts>', $linkFont.'</fonts>', $styles);
 
         $styleIndex = (int) $match[1];
-        $styles = preg_replace('/<cellXfs count="\d+">/', '<cellXfs count="'.($styleIndex + 1).'">', $styles, 1) ?? $styles;
-        $companyStyle = '<xf numFmtId="0" fontId="10" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>';
-        $styles = str_replace('</cellXfs>', $companyStyle.'</cellXfs>', $styles);
+        $styles = preg_replace('/<cellXfs count="\d+">/', '<cellXfs count="'.($styleIndex + 3).'">', $styles, 1) ?? $styles;
+        $headerStyles = '<xf numFmtId="0" fontId="10" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>'
+            .'<xf numFmtId="0" fontId="10" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>'
+            .'<xf numFmtId="0" fontId="'.$fontIndex.'" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>';
+        $styles = str_replace('</cellXfs>', $headerStyles.'</cellXfs>', $styles);
         $zip->addFromString('xl/styles.xml', $styles);
 
-        return $styleIndex;
+        return ['company' => $styleIndex, 'note' => $styleIndex + 1, 'link' => $styleIndex + 2];
+    }
+
+    private function addAppLinkRelation(ZipArchive $zip): string
+    {
+        $path = 'xl/worksheets/_rels/sheet1.xml.rels';
+        $relations = $zip->getFromName($path);
+        throw_unless(is_string($relations), new RuntimeException('SKULA worksheet relations are missing.'));
+
+        $identifier = 'rId'.(substr_count($relations, '<Relationship ') + 1);
+        $relation = '<Relationship Id="'.$identifier.'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://business.qla.dev/" TargetMode="External"/>';
+        $zip->addFromString($path, str_replace('</Relationships>', $relation.'</Relationships>', $relations));
+
+        return $identifier;
     }
 
     private function companyLines(TravelOrder $order): array
