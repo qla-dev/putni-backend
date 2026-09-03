@@ -20,7 +20,7 @@ class TravelOrderExportService
     public function generate(TravelOrder $order, ExportFormat $format, string $currency = 'BAM', bool $includeImages = false): array
     {
         $content = match ($format->handler) {
-            'pdf' => $this->pdf($order, $currency),
+            'pdf' => $this->pdf($order),
             'pantheon' => $this->pantheon($order),
             'spica' => $this->spica($order),
             'option' => $this->option($order),
@@ -119,49 +119,9 @@ class TravelOrderExportService
         return "{$prefix}_{$number}.{$format->extension}";
     }
 
-    private function pdf(TravelOrder $order, string $currency): string
+    private function pdf(TravelOrder $order): string
     {
-        $lines = [
-            "PUTNI NALOG {$order->order_number}",
-            "Relacija: {$order->route}",
-            "Zaposlenik: {$order->employee_name}",
-            "Svrha: {$order->purpose}",
-            '',
-            'Dnevnice: '.$this->money($order->total_allowance_cost, $currency),
-            'Kilometraza: '.$this->money($order->total_km_cost, $currency),
-            'Ostali troskovi: '.$this->money($order->total_expenses_cost, $currency),
-            'Akontacija: '.$this->money($order->advancement_paid, $currency),
-            'Za isplatu: '.$this->money($order->balance_to_pay, $currency),
-        ];
-        $stream = "BT\n/F1 12 Tf\n50 790 Td\n";
-        foreach ($lines as $index => $line) {
-            if ($index > 0) {
-                $stream .= "0 -24 Td\n";
-            }
-            $stream .= '('.$this->pdfText($line).") Tj\n";
-        }
-        $stream .= "ET\n";
-        $objects = [
-            '<< /Type /Catalog /Pages 2 0 R >>',
-            '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
-            '<< /Length '.strlen($stream)." >>\nstream\n{$stream}endstream",
-            '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-        ];
-        $pdf = "%PDF-1.4\n";
-        $offsets = [0];
-        foreach ($objects as $index => $object) {
-            $offsets[] = strlen($pdf);
-            $number = $index + 1;
-            $pdf .= "{$number} 0 obj\n{$object}\nendobj\n";
-        }
-        $xref = strlen($pdf);
-        $pdf .= "xref\n0 ".(count($objects) + 1)."\n0000000000 65535 f \n";
-        foreach (array_slice($offsets, 1) as $offset) {
-            $pdf .= sprintf("%010d 00000 n \n", $offset);
-        }
-
-        return $pdf."trailer\n<< /Size ".(count($objects) + 1)." /Root 1 0 R >>\nstartxref\n{$xref}\n%%EOF";
+        return (new SkulaPdfRenderer)->render($this->skula($order));
     }
 
     private function pantheon(TravelOrder $order): string
@@ -417,8 +377,7 @@ class TravelOrderExportService
         ?int $style = null,
         ?int $fontSize = null,
         bool $bold = false,
-    ): string
-    {
+    ): string {
         $pattern = '/<c r="'.preg_quote($cell, '/').'"([^>]*?)(?:\s*\/>|>.*?<\/c>)/s';
         if (! preg_match($pattern, $xml, $match)) {
             return $xml;
@@ -778,13 +737,6 @@ class TravelOrderExportService
         return json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 
-    private function money(float $value, string $currency): string
-    {
-        $converted = $currency === 'BAM' ? $this->bam($value) : $value;
-
-        return number_format($converted, 2, ',', '.').' '.($currency === 'BAM' ? 'KM' : 'EUR');
-    }
-
     private function bam(float $value): float
     {
         return round($value * self::BAM_RATE, 2);
@@ -803,12 +755,5 @@ class TravelOrderExportService
     private function date(DateTimeInterface $date): string
     {
         return $date->format('d.m.Y');
-    }
-
-    private function pdfText(string $value): string
-    {
-        $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value) ?: $value;
-
-        return str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $ascii);
     }
 }
