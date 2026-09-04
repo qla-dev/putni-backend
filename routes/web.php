@@ -6,6 +6,21 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+Route::get('download', function (\Illuminate\Http\Request $request) {
+    $userAgent = $request->userAgent() ?? '';
+
+    if (preg_match('/Android/i', $userAgent)) {
+        return redirect()->away('https://play.google.com/store/apps/details?id=radni.qla.dev');
+    }
+
+    if (preg_match('/iPhone|iPad|iPod/i', $userAgent)
+        || (preg_match('/Macintosh/i', $userAgent) && preg_match('/Mobile/i', $userAgent))) {
+        return redirect()->away('https://apps.apple.com/us/app/putni-nalozi-ai-unos-tro%C5%A1ka/id6794137857');
+    }
+
+    return redirect()->away('https://business.qla.dev');
+})->name('download');
+
 Route::get('invite/{code}', function (string $code) {
     return response()
         ->view('invite', ['code' => strtoupper($code)])
